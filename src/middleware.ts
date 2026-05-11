@@ -5,7 +5,6 @@ const protectedRoutes = [
   "/applications",
   "/saved-jobs",
   "/profile",
-  "/recruiter",
 ];
 
 export function middleware(request: NextRequest) {
@@ -31,6 +30,5 @@ export const config = {
     "/applications/:path*",
     "/saved-jobs/:path*",
     "/profile/:path*",
-    "/recruiter/:path*",
   ],
 };
