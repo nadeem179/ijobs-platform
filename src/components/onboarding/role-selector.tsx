@@ -1,53 +1,60 @@
-"use client";
-
-import { cn } from "@/lib/utils";
-
-const roles = [
-  "UI/UX Designer",
-  "Frontend Developer",
-  "Backend Developer",
-  "Full-Stack Developer",
-  "Product Designer",
-  "Product Manager",
-  "Data Scientist",
-  "DevOps Engineer",
-  "Mobile Developer",
-  "Student",
-  "Freelancer",
-  "Other",
-];
-
 interface RoleSelectorProps {
   selected: string | null;
   onSelect: (role: string) => void;
 }
 
-export function RoleSelector({ selected, onSelect }: RoleSelectorProps) {
+export function RoleSelector({
+  selected,
+  onSelect,
+}: RoleSelectorProps) {
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold tracking-tight">
-          What describes you best?
-        </h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          This helps us tailor your job recommendations.
+    <div className="space-y-6">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold">
+          How will you use iJobs?
+        </h1>
+
+        <p className="text-muted-foreground mt-2">
+          Choose your path. You can always update this later.
         </p>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {roles.map((role) => (
-          <button
-            key={role}
-            onClick={() => onSelect(role)}
-            className={cn(
-              "rounded-xl border px-3.5 py-3 text-sm font-medium transition-all text-left",
-              selected === role
-                ? "border-primary bg-primary/5 text-primary shadow-sm"
-                : "border-border/40 bg-background text-muted-foreground hover:border-border/70 hover:text-foreground"
-            )}
-          >
-            {role}
-          </button>
-        ))}
+
+      <div className="space-y-4">
+        <button
+          onClick={() => onSelect("candidate")}
+          className={`w-full rounded-2xl border p-6 text-left transition ${
+            selected === "candidate"
+              ? "border-black bg-black text-white"
+              : "border-gray-200 hover:border-black"
+          }`}
+        >
+          <div className="text-lg font-semibold">
+            I am looking for a job
+          </div>
+
+          <p className="text-sm opacity-80 mt-1">
+            Browse verified opportunities, apply with one click,
+            and track your applications.
+          </p>
+        </button>
+
+        <button
+          onClick={() => onSelect("recruiter")}
+          className={`w-full rounded-2xl border p-6 text-left transition ${
+            selected === "recruiter"
+              ? "border-black bg-black text-white"
+              : "border-gray-200 hover:border-black"
+          }`}
+        >
+          <div className="text-lg font-semibold">
+            I am hiring talent
+          </div>
+
+          <p className="text-sm opacity-80 mt-1">
+            Post jobs, review qualified candidates,
+            and build your team.
+          </p>
+        </button>
       </div>
     </div>
   );

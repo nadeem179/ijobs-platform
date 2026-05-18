@@ -66,9 +66,14 @@ export default function AuthCallbackPage() {
       setWelcomeName(authUser.name);
       window.history.replaceState({}, document.title, "/auth/callback");
 
-      window.setTimeout(() => {
-        router.replace(getPostAuthRedirect(authUser));
-      }, 700);
+      const redirectTo =
+  !authUser.onboardingComplete || !authUser.role
+    ? "/onboarding/select-role"
+    : authUser.role === "recruiter"
+    ? "/recruiter"
+    : "/dashboard";
+
+router.replace(redirectTo);
     };
 
     void handleCallback();
