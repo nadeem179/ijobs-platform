@@ -263,31 +263,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyUser, router]);
 
   const setRole = useCallback(
-    async (role: "candidate" | "recruiter") => {
-      const supabase = getSupabaseClient();
-      let currentUser = user;
+  async (role: "candidate" | "recruiter") => {
 
-      if (supabase && !currentUser) {
-        currentUser = await refreshUser();
-      }
+    localStorage.setItem("ijobs_role", role);
 
-      if (supabase && currentUser?.id) {
-        const { error } = await supabase
-          .from("profiles")
-          .update({ role, onboarding_complete: false })
-          .eq("id", currentUser.id);
+    setUser((prev) => {
+      if (!prev) return prev;
 
-        if (error) throw error;
+      return {
+        ...prev,
+        role,
+      };
+    });
 
-        applyUser({ ...currentUser, role, onboardingComplete: false });
-        return;
-      }
+    const supabase = getSupabaseClient();
 
-      if (!currentUser) throw new Error("You must be signed in to choose a role.");
-      applyUser({ ...currentUser, role, onboardingComplete: false });
-    },
-    [applyUser, refreshUser, user]
-  );
+    if (!supabase || !user?.id) {
+      return;
+    }
+
+    supabase
+      .from("profiles")
+      .upsert({
+        id: user.id,
+        role,
+        onboarding_complete: false,
+      })
+      .then(({ error }) => {
+        if (error) {
+          console.error("[ROLE SAVE ERROR]", error);
+        }
+      });
+
+  },
+  [user]
+);
 
   const completeOnboarding = useCallback(
     async (
@@ -345,8 +355,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const {
     data: { subscription },
   } = supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log("[AUTH EVENT]", event);
-
+    
     if (event === "SIGNED_OUT") {
       applyUser(null);
       setIsLoading(false);
