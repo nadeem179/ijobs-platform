@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SkillBadge } from "@/components/jobs/skill-badge";
+import { ProtectedLayout } from "@/components/navigation/protected-layout";
 import { mockProfile } from "@/data/profile";
 import { ArrowLeft, Plus, X } from "lucide-react";
 
@@ -48,6 +48,7 @@ export default function ProfileEditPage() {
   );
 
   return (
+    <ProtectedLayout>
     <div className="min-h-screen">
       <div className="mx-auto max-w-3xl px-4 py-8 sm:py-10 sm:px-6 lg:px-8">
         {/* Back */}
@@ -172,5 +173,6 @@ export default function ProfileEditPage() {
         </div>
       </div>
     </div>
+    </ProtectedLayout>
   );
 }

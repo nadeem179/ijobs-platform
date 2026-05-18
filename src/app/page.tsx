@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
   ShieldCheck,
-  Users,
   CheckCircle,
   Star,
 } from "lucide-react";

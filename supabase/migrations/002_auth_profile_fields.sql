@@ -1,0 +1,4 @@
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS role TEXT CHECK (role IN ('candidate', 'recruiter')),
+  ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN NOT NULL DEFAULT FALSE;

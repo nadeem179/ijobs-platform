@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { RecruiterHeader } from "@/components/recruiter/recruiter-header";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Plus, X } from "lucide-react";
 import { useState } from "react";
@@ -54,7 +55,13 @@ export default function PostJobPage() {
   );
 
   return (
-    <div className="min-h-screen">
+  <div className="min-h-screen">
+
+    <section className="border-b border-border/40 bg-muted/20">
+      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+        <RecruiterHeader />
+      </div>
+    </section>
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Back */}
         <Link

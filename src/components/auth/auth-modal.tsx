@@ -4,7 +4,6 @@ import { useState } from "react";
 import { X, Mail, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/context/auth";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 interface AuthModalProps {
@@ -14,124 +13,87 @@ interface AuthModalProps {
 }
 
 export function AuthModal({
-  onComplete,
   onClose,
   mode: initialMode = "select",
 }: AuthModalProps) {
-  const [screen, setScreen] = useState<"select" | "otp" | "verify" | "loading">(
+  const [screen, setScreen] = useState<"select" | "email" | "check" | "loading">(
     "select"
   );
   const [email, setEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
 
   const title = initialMode === "signup" ? "Create your account" : "Welcome back";
-
-  // ───── Google OAuth ─────
 
   const handleGoogleSignIn = async () => {
     setError(null);
     const supabase = getSupabaseClient();
 
-    if (supabase) {
-      setIsLoading(true);
-      setScreen("loading");
-      const { error: signInError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-      setIsLoading(false);
-      if (signInError) {
-        setError(signInError.message);
-        setScreen("select");
-        return;
-      }
-      // Redirect happens — the /auth/callback page will handle the session
+    if (!supabase) {
+      setError("Supabase authentication is not configured.");
       return;
     }
 
-    // Fallback: mock login
-    await login("demo@example.com", "password");
-    onComplete?.();
-    onClose();
+    setIsLoading(true);
+    setScreen("loading");
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: "openid email profile",
+        queryParams: {
+          prompt: "consent",
+          access_type: "offline",
+        },
+      },
+    });
+    setIsLoading(false);
+
+    if (signInError) {
+      setError(signInError.message);
+      setScreen("select");
+    }
   };
 
-  // ───── Email OTP ─────
-
-  const handleSendOTP = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendEmailLink = async () => {
     setError(null);
 
-    if (!email.trim()) return;
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) return false;
 
     const supabase = getSupabaseClient();
 
-    if (supabase) {
-      setIsLoading(true);
-      const { error: otpError } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          shouldCreateUser: initialMode === "signup",
+    if (!supabase) {
+      setError("Supabase authentication is not configured.");
+      return false;
+    }
+
+    setIsLoading(true);
+    const { error: linkError } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: {
+          email: normalizedEmail,
         },
-      });
-      setIsLoading(false);
+      },
+    });
+    setIsLoading(false);
 
-      if (otpError) {
-        setError(otpError.message);
-        return;
-      }
-
-      setOtpSent(true);
-      setScreen("verify");
-      return;
+    if (linkError) {
+      setError(linkError.message);
+      return false;
     }
 
-    // Fallback: mock login
-    await login(email.trim(), "password");
-    onComplete?.();
-    onClose();
+    setScreen("check");
+    return true;
   };
 
-  const handleVerifyOTP = async (e: React.FormEvent) => {
+  const handleSendEmailLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    if (!otpCode.trim()) return;
-
-    const supabase = getSupabaseClient();
-
-    if (supabase) {
-      setIsLoading(true);
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        email: email.trim(),
-        token: otpCode.trim(),
-        type: "email",
-      });
-      setIsLoading(false);
-
-      if (verifyError) {
-        setError(verifyError.message);
-        return;
-      }
-
-      // Session is automatically handled by the auth listener
-      onComplete?.();
-      onClose();
-      return;
-    }
-
-    // Fallback: mock login
-    await login(email.trim(), "password");
-    onComplete?.();
-    onClose();
+    await sendEmailLink();
   };
-
-  // ───── Loading Screen ─────
 
   if (screen === "loading") {
     return (
@@ -139,16 +101,13 @@ export function AuthModal({
         <div className="flex justify-center pt-4">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-        <p className="text-sm text-muted-foreground">
-          Redirecting to Google...
-        </p>
+        <p className="text-sm text-muted-foreground">Redirecting to Google...</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight">
           {screen === "select" ? title : "Check your email"}
@@ -165,13 +124,12 @@ export function AuthModal({
       <p className="text-sm text-muted-foreground leading-relaxed">
         {screen === "select" &&
           "No password needed. Choose how you'd like to continue."}
-        {screen === "verify" &&
-          `We sent a code to ${email}. Enter it below to continue.`}
-        {screen === "otp" &&
-          "Enter your email and we'll send you a verification code."}
+        {screen === "email" &&
+          "Enter your email and we'll send you a secure sign-in link."}
+        {screen === "check" &&
+          `We sent a secure sign-in link to ${email}. Open it from your inbox to continue.`}
       </p>
 
-      {/* Error */}
       {error && (
         <div className="flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-950 px-3 py-2 text-xs text-red-600 dark:text-red-400">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
@@ -179,15 +137,13 @@ export function AuthModal({
         </div>
       )}
 
-      {/* OTP sent success */}
-      {otpSent && (
+      {screen === "check" && (
         <div className="flex items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-950 px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-          Code sent! Check your inbox.
+          Check your inbox, then use the link in that email to finish signing in.
         </div>
       )}
 
-      {/* ───── Select Screen ───── */}
       {screen === "select" && (
         <div className="space-y-3">
           <Button
@@ -227,9 +183,7 @@ export function AuthModal({
               <span className="w-full border-t border-border/40" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-background px-2 text-muted-foreground">
-                or
-              </span>
+              <span className="bg-background px-2 text-muted-foreground">or</span>
             </div>
           </div>
 
@@ -237,7 +191,7 @@ export function AuthModal({
             variant="outline"
             size="lg"
             className="w-full justify-center gap-3 h-12 rounded-xl text-sm font-medium"
-            onClick={() => setScreen("otp")}
+            onClick={() => setScreen("email")}
           >
             <Mail className="h-4 w-4" />
             Continue with Email
@@ -256,9 +210,8 @@ export function AuthModal({
         </div>
       )}
 
-      {/* ───── Email Input Screen ───── */}
-      {screen === "otp" && (
-        <form onSubmit={handleSendOTP} className="space-y-4">
+      {screen === "email" && (
+        <form onSubmit={handleSendEmailLink} className="space-y-4">
           <div>
             <label className="text-sm font-medium mb-1.5 block">
               Email address
@@ -285,7 +238,7 @@ export function AuthModal({
                 Sending...
               </>
             ) : (
-              "Send verification code"
+              "Send sign-in link"
             )}
           </Button>
           <button
@@ -298,57 +251,33 @@ export function AuthModal({
         </form>
       )}
 
-      {/* ───── Verify OTP Screen ───── */}
-      {screen === "verify" && (
-        <form onSubmit={handleVerifyOTP} className="space-y-4">
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">
-              Verification code
-            </label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              placeholder="Enter the 6-digit code"
-              value={otpCode}
-              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-              className="h-11 text-sm text-center tracking-widest"
-              autoFocus
-              required
-              maxLength={6}
-            />
-          </div>
+      {screen === "check" && (
+        <div className="space-y-4">
           <Button
-            type="submit"
+            type="button"
+            variant="outline"
             size="lg"
             className="w-full h-11 rounded-xl text-sm"
-            disabled={otpCode.length < 6 || isLoading}
+            disabled={isLoading}
+            onClick={() => void sendEmailLink()}
           >
             {isLoading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Verifying...
+                Sending...
               </>
             ) : (
-              "Verify code"
+              "Resend email"
             )}
           </Button>
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setScreen("select")}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Back
-            </button>
-            <button
-              type="button"
-              onClick={handleSendOTP}
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Resend code
-            </button>
-          </div>
-        </form>
+          <button
+            type="button"
+            onClick={() => setScreen("email")}
+            className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Use a different email
+          </button>
+        </div>
       )}
     </div>
   );

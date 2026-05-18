@@ -40,6 +40,7 @@ const footerLinks = [
 ];
 
 export function Footer() {
+  
   return (
     <footer className="border-t border-border/40 bg-muted/30">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">

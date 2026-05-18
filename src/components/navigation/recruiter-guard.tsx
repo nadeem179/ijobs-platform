@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/context/auth";
+import { useRouter } from "next/navigation";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { AuthModalShell } from "@/components/auth/auth-modal-shell";
 import { Button } from "@/components/ui/button";
+import { LoadingState } from "@/components/ui/loading-state";
 import { ShieldCheck } from "lucide-react";
 
 interface RecruiterGuardProps {
@@ -12,10 +14,49 @@ interface RecruiterGuardProps {
 }
 
 export function RecruiterGuard({ children }: RecruiterGuardProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading, role, onboardingComplete } = useAuth();
+  const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
 
-  if (isAuthenticated) {
+  useEffect(() => {
+    if (isLoading) return;
+
+    if (!isAuthenticated) {
+      router.replace("/");
+      return;
+    }
+
+    if (!onboardingComplete) {
+      router.replace("/onboarding/select-role");
+      return;
+    }
+
+    if (role !== "recruiter") {
+      router.replace("/dashboard");
+    }
+  }, [isAuthenticated, isLoading, onboardingComplete, role, router]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingState variant="spinner" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  if (isAuthenticated && !onboardingComplete) {
+    return null;
+  }
+
+  if (isAuthenticated && role !== "recruiter") {
+    return null;
+  }
+
+  if (isAuthenticated && role === "recruiter") {
     return <>{children}</>;
   }
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { ProtectedLayout } from "@/components/navigation/protected-layout";
 import { ApplicationStatus } from "@/components/applications/application-status";
 import { mockApplications } from "@/data/profile";
 import { ArrowRight, MapPin, Clock, Briefcase } from "lucide-react";
@@ -25,6 +25,7 @@ export default function ApplicationsPage() {
       : mockApplications.filter((a) => a.status === activeTab);
 
   return (
+    <ProtectedLayout>
     <div className="min-h-screen">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8 sm:px-6 lg:px-8">
         {/* Header */}
@@ -112,5 +113,6 @@ export default function ApplicationsPage() {
         )}
       </div>
     </div>
+    </ProtectedLayout>
   );
 }

@@ -2,19 +2,32 @@
 
 import { useAuth } from "@/context/auth";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
 import { Briefcase, Search } from "lucide-react";
 
 export function RoleSelector() {
-  const { setRole } = useAuth();
+  const { user, isLoading, onboardingComplete, setRole, getPostAuthRedirect } = useAuth();
   const router = useRouter();
+  const [isSaving, setIsSaving] = useState(false);
 
-  const selectRole = (role: "candidate" | "recruiter") => {
-    setRole(role);
-    if (role === "recruiter") {
-      router.push("/onboarding/recruiter");
-    } else {
-      router.push("/onboarding/candidate");
+  useEffect(() => {
+    if (!isLoading && user?.role && onboardingComplete) {
+      router.push(getPostAuthRedirect(user));
+    }
+  }, [getPostAuthRedirect, isLoading, onboardingComplete, router, user]);
+
+  const selectRole = async (role: "candidate" | "recruiter") => {
+    setIsSaving(true);
+    try {
+      await setRole(role);
+
+      if (role === "recruiter") {
+        router.push("/onboarding/recruiter");
+      } else {
+        router.push("/onboarding/candidate");
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -34,6 +47,7 @@ export function RoleSelector() {
         <div className="grid gap-4">
           <button
             onClick={() => selectRole("candidate")}
+            disabled={isSaving}
             className="rounded-xl border border-border/30 bg-background p-5 text-left transition-all hover:border-border/60 hover:shadow-sm"
           >
             <div className="flex items-start gap-4">
@@ -42,7 +56,7 @@ export function RoleSelector() {
               </div>
               <div>
                 <h3 className="font-semibold text-sm mb-1">
-                  I'm looking for a job
+                  I am looking for a job
                 </h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Browse verified opportunities, apply with one click, and track
@@ -54,6 +68,7 @@ export function RoleSelector() {
 
           <button
             onClick={() => selectRole("recruiter")}
+            disabled={isSaving}
             className="rounded-xl border border-border/30 bg-background p-5 text-left transition-all hover:border-border/60 hover:shadow-sm"
           >
             <div className="flex items-start gap-4">
@@ -62,7 +77,7 @@ export function RoleSelector() {
               </div>
               <div>
                 <h3 className="font-semibold text-sm mb-1">
-                  I'm hiring talent
+                  I am hiring talent
                 </h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Post jobs, review qualified candidates, and build your team.

@@ -33,20 +33,27 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>
-          <ToastProvider>
-            <Header />
-            <main className="flex-1">{children}</main>
-            <Footer />
-          </ToastProvider>
-        </AuthProvider>
-      </body>
+  <AuthProvider>
+    <ToastProvider>
+
+      <Header />
+
+      <main className="flex-1">
+        {children}
+      </main>
+
+      <Footer />
+
+    </ToastProvider>
+  </AuthProvider>
+</body>
     </html>
   );
 }

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 export function ProfileDropdown() {
-  const { user, logout } = useAuth();
+  const { user, role, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -35,12 +35,24 @@ export function ProfileDropdown() {
 
   if (!user) return null;
 
-  const items = [
-    { href: "/profile", label: "Profile", icon: User },
-    { href: "/applications", label: "Applications", icon: Briefcase },
-    { href: "/saved-jobs", label: "Saved Jobs", icon: Bookmark },
-    { href: "/profile/edit", label: "Edit Profile", icon: Settings, divider: true },
-  ];
+  const items =
+    role === "recruiter"
+      ? [
+          { href: "/recruiter", label: "Dashboard", icon: Briefcase },
+          { href: "/recruiter/jobs", label: "Jobs", icon: Briefcase },
+          { href: "/recruiter/candidates", label: "Candidates", icon: User },
+          { href: "/recruiter/post-job", label: "Post Job", icon: Settings },
+          { href: "/profile", label: "Company/Profile", icon: User, divider: true },
+          { href: "/profile/edit", label: "Edit Profile", icon: Settings, divider: true },
+        ]
+      : [
+          { href: "/dashboard", label: "Dashboard", icon: User },
+          { href: "/jobs", label: "Jobs", icon: Briefcase },
+          { href: "/applications", label: "Applications", icon: Briefcase },
+          { href: "/saved-jobs", label: "Saved Jobs", icon: Bookmark },
+          { href: "/profile", label: "Profile", icon: User, divider: true },
+          { href: "/profile/edit", label: "Edit Profile", icon: Settings, divider: true },
+        ];
 
   return (
     <div className="relative">
@@ -90,8 +102,8 @@ export function ProfileDropdown() {
           <div className="border-t border-border/20 mt-1 pt-1">
             <button
               onClick={() => {
-                logout();
                 setOpen(false);
+                void logout();
               }}
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
             >

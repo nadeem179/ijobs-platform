@@ -33,7 +33,7 @@ export async function ensureProfile(userId: string, name: string, email: string)
     .from("profiles")
     .select("id")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
   if (existing) return existing;
 
@@ -44,6 +44,8 @@ export async function ensureProfile(userId: string, name: string, email: string)
       id: userId,
       name,
       email,
+      role: null,
+      onboarding_complete: false,
     })
     .select()
     .single();

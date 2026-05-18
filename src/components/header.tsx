@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -18,28 +17,34 @@ const defaultNavLinks = [
 ];
 
 const candidateNavLinks = [
-  { href: "/jobs", label: "Find Jobs" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/jobs", label: "Jobs" },
   { href: "/applications", label: "Applications" },
   { href: "/saved-jobs", label: "Saved Jobs" },
+  { href: "/profile", label: "Profile" },
 ];
 
 const recruiterNavLinks = [
   { href: "/recruiter", label: "Dashboard" },
-  { href: "/recruiter/post-job", label: "Post a Job" },
+  { href: "/recruiter/jobs", label: "Jobs" },
   { href: "/recruiter/candidates", label: "Candidates" },
+  { href: "/recruiter/post-job", label: "Post Job" },
+  { href: "/profile", label: "Company/Profile" },
 ];
 
 export function Header() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, role, onboardingComplete, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
 
-  const navLinks = !isAuthenticated
+  const hasRoleNavigation = isAuthenticated && onboardingComplete && role;
+
+  const navLinks = !hasRoleNavigation
     ? defaultNavLinks
-    : user?.role === "candidate"
+    : role === "candidate"
     ? candidateNavLinks
-    : user?.role === "recruiter"
+    : role === "recruiter"
     ? recruiterNavLinks
     : defaultNavLinks;
 
@@ -88,7 +93,12 @@ export function Header() {
           {/* Desktop actions — conditional on auth */}
           <div className="hidden md:flex items-center gap-3 shrink-0">
             {isAuthenticated ? (
-              <ProfileDropdown />
+              <>
+                <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
+                  Welcome, {user?.name || "there"}
+                </span>
+                <ProfileDropdown />
+              </>
             ) : (
               <>
                 <Button
@@ -171,17 +181,23 @@ export function Header() {
             {/* Mobile auth actions */}
             <div className="flex items-center gap-3 pt-2 border-t border-border/20 mt-2">
               {isAuthenticated ? (
-                <div className="flex items-center gap-3 w-full">
-                  <Link
-                    href="/profile"
-                    onClick={() => setMobileOpen(false)}
-                    className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-                  >
+                <div className="flex items-center justify-between gap-3 w-full">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-xs font-semibold">
-                      iJ
+                      {user?.initials || "iJ"}
                     </div>
-                    Profile
-                  </Link>
+                    Welcome, {user?.name || "there"}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setMobileOpen(false);
+                      void logout();
+                    }}
+                  >
+                    Log out
+                  </Button>
                 </div>
               ) : (
                 <>

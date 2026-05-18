@@ -1,10 +1,18 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
+import type { AuthChangeEvent, User } from "@supabase/supabase-js";
 import { authService } from "@/services";
 import type { Session } from "@/services";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { AuthChangeEvent } from "@supabase/supabase-js";
 
 export type UserRole = "candidate" | "recruiter" | null;
 
@@ -20,18 +28,62 @@ export interface AuthUser {
 
 interface AuthContextType {
   user: AuthUser | null;
+  role: UserRole;
+  onboardingComplete: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
+  loading: boolean;
   login: (email?: string, password?: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
-  restoreSession: () => Promise<void>;
-  setRole: (role: "candidate" | "recruiter") => void;
-  completeOnboarding: () => void;
+  restoreSession: () => Promise<AuthUser | null>;
+  refreshUser: () => Promise<AuthUser | null>;
+  setRole: (role: "candidate" | "recruiter") => Promise<void>;
+  completeOnboarding: (
+    role?: "candidate" | "recruiter",
+    updates?: Partial<ProfileUpdates>
+  ) => Promise<void>;
+  getPostAuthRedirect: (authUser?: AuthUser | null) => string;
   userRole: UserRole;
 }
 
+interface ProfileRow {
+  id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  role: UserRole;
+  onboarding_complete: boolean | null;
+}
+
+interface ProfileUpdates {
+  name: string;
+  headline: string;
+  location: string;
+  phone: string;
+  avatar_url: string;
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function getUserName(user: User): string {
+  return (
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.email?.split("@")[0] ||
+    "User"
+  );
+}
+
+function getInitials(nameOrEmail: string): string {
+  return nameOrEmail
+    .split(/[ @._-]+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 function toAuthUser(session: Session): AuthUser {
   return {
@@ -45,161 +97,289 @@ function toAuthUser(session: Session): AuthUser {
   };
 }
 
-const MOCK_AUTH_USER: AuthUser = {
-  name: "Jane Doe",
-  email: "jane.doe@example.com",
-  initials: "JD",
-  role: null,
-  onboardingComplete: false,
-};
+async function loadProfile(user: User): Promise<ProfileRow | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
 
-function persistRole(role: "candidate" | "recruiter"): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("ijobs_role", role);
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id,name,email,avatar_url,role,onboarding_complete")
+    .eq("id", user.id)
+    .maybeSingle<ProfileRow>();
+
+  if (error) {
+    console.error("Failed to load profile:", error);
+    return null;
+  }
+
+  return data ?? null;
 }
 
-function loadRole(): UserRole {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("ijobs_role") as UserRole;
+async function ensureProfile(user: User): Promise<ProfileRow | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const name = getUserName(user);
+  const email = user.email || "";
+  const avatarUrl = user.user_metadata?.avatar_url || null;
+  const existing = await loadProfile(user);
+
+  if (existing) {
+    const patch: Partial<ProfileRow> = {};
+    if (!existing.name && name) patch.name = name;
+    if (!existing.email && email) patch.email = email;
+    if (existing.name !== name && name) patch.name = name;
+    if (existing.email !== email && email) patch.email = email;
+    if (existing.avatar_url !== avatarUrl && avatarUrl) patch.avatar_url = avatarUrl;
+
+    if (Object.keys(patch).length > 0) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .update(patch)
+        .eq("id", user.id)
+        .select("id,name,email,avatar_url,role,onboarding_complete")
+        .single<ProfileRow>();
+
+      if (!error && data) return data;
+    }
+
+    return existing;
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .insert({
+      id: user.id,
+      name,
+      email,
+      avatar_url: avatarUrl,
+      role: null,
+      onboarding_complete: false,
+    })
+    .select("id,name,email,avatar_url,role,onboarding_complete")
+    .single<ProfileRow>();
+
+  if (error) {
+    console.error("Failed to create profile:", error);
+    return null;
+  }
+
+  return data;
+}
+
+function mapSupabaseUser(user: User, profile: ProfileRow | null): AuthUser {
+  const name = profile?.name || getUserName(user);
+  const email = profile?.email || user.email || "";
+  const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url;
+
+  return {
+    id: user.id,
+    name,
+    email,
+    initials: getInitials(name || email || "User"),
+    avatarUrl,
+    role: profile?.role ?? null,
+    onboardingComplete: Boolean(profile?.onboarding_complete),
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [userRole, setUserRole] = useState<UserRole>(null);
+  const router = useRouter();
 
-  const setRole = useCallback((role: "candidate" | "recruiter") => {
-    setUserRole(role);
-    persistRole(role);
-    setUser((prev) => (prev ? { ...prev, role, onboardingComplete: false } : prev));
+  const applyUser = useCallback((nextUser: AuthUser | null) => {
+    setUser(nextUser);
+    return nextUser;
   }, []);
 
-  const completeOnboarding = useCallback(() => {
-    setUser((prev) => (prev ? { ...prev, onboardingComplete: true } : prev));
-  }, []);
+  const hydrateSupabaseUser = useCallback(
+    async (supabaseUser: User): Promise<AuthUser> => {
+      const profile = await ensureProfile(supabaseUser);
+      const authUser = mapSupabaseUser(supabaseUser, profile);
+      applyUser(authUser);
+      return authUser;
+    },
+    [applyUser]
+  );
 
-  const login = useCallback(async (_email?: string, _password?: string) => {
-    const result = await authService.signIn(_email || "test@test.com", _password || "password");
-    if (result.data) {
-      const authUser = toAuthUser(result.data);
-      const savedRole = loadRole();
-      authUser.role = savedRole;
-      setUser(authUser);
-      setUserRole(savedRole);
-    } else {
-      const savedRole = loadRole();
-      setUser({ ...MOCK_AUTH_USER, role: savedRole });
-      setUserRole(savedRole);
+  const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        return applyUser(null);
+      }
+
+      return hydrateSupabaseUser(session.user);
     }
-  }, []);
 
-  const signUp = useCallback(async (email: string, password: string, name: string) => {
-    const result = await authService.signUp(email, password, name);
-    if (result.data) {
-      setUser(toAuthUser(result.data));
-    }
-  }, []);
+    const result = await authService.getSession();
+    return applyUser(result.data ? toAuthUser(result.data) : null);
+  }, [applyUser, hydrateSupabaseUser]);
 
-  const logout = useCallback(async () => {
-    await authService.signOut();
-    setUser(null);
-    setUserRole(null);
-    localStorage.removeItem("ijobs_role");
-  }, []);
-
-  const restoreSession = useCallback(async () => {
+  const restoreSession = useCallback(async (): Promise<AuthUser | null> => {
     setIsLoading(true);
     try {
-      const savedRole = loadRole();
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const userData = session.user;
-          setUser({
-            name: userData.user_metadata?.full_name || userData.email?.split("@")[0] || "User",
-            email: userData.email || "",
-            initials: (userData.user_metadata?.full_name || userData.email || "U")
-              .split(" ")
-              .map((n: string) => n[0])
-              .join("")
-              .toUpperCase()
-              .slice(0, 2),
-            avatarUrl: userData.user_metadata?.avatar_url,
-            id: userData.id,
-            role: savedRole,
-            onboardingComplete: false,
-          });
-          setUserRole(savedRole);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      const result = await authService.getSession();
-      if (result.data) {
-        const authUser = toAuthUser(result.data);
-        authUser.role = savedRole;
-        setUser(authUser);
-        setUserRole(savedRole);
-      }
-    } catch {
-      setUser(null);
+      return await refreshUser();
+    } catch (error) {
+      console.error("Failed to restore session:", error);
+      return applyUser(null);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyUser, refreshUser]);
+
+  const login = useCallback(
+    async (_email?: string, _password?: string) => {
+      const result = await authService.signIn(_email || "", _password || "");
+
+      if (result.data) {
+        applyUser(toAuthUser(result.data));
+      } else {
+        throw new Error(result.error?.message || "Email authentication requires a verified Supabase session.");
+      }
+    },
+    [applyUser]
+  );
+
+  const signUp = useCallback(
+    async (email: string, password: string, name: string) => {
+      const result = await authService.signUp(email, password, name);
+      if (result.data) {
+        applyUser(toAuthUser(result.data));
+      }
+    },
+    [applyUser]
+  );
+
+  const logout = useCallback(async () => {
+    applyUser(null);
+    router.replace("/");
+    await authService.signOut();
+  }, [applyUser, router]);
+
+  const setRole = useCallback(
+    async (role: "candidate" | "recruiter") => {
+      const supabase = getSupabaseClient();
+      let currentUser = user;
+
+      if (supabase && !currentUser) {
+        currentUser = await refreshUser();
+      }
+
+      if (supabase && currentUser?.id) {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ role, onboarding_complete: false })
+          .eq("id", currentUser.id);
+
+        if (error) throw error;
+
+        applyUser({ ...currentUser, role, onboardingComplete: false });
+        return;
+      }
+
+      if (!currentUser) throw new Error("You must be signed in to choose a role.");
+      applyUser({ ...currentUser, role, onboardingComplete: false });
+    },
+    [applyUser, refreshUser, user]
+  );
+
+  const completeOnboarding = useCallback(
+    async (
+      selectedRole?: "candidate" | "recruiter",
+      updates: Partial<ProfileUpdates> = {}
+    ) => {
+      const role = selectedRole ?? user?.role;
+      if (!role) throw new Error("Select a role before completing onboarding.");
+
+      const supabase = getSupabaseClient();
+      let currentUser = user;
+
+      if (supabase && !currentUser) {
+        currentUser = await refreshUser();
+      }
+
+      if (supabase && currentUser?.id) {
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            ...updates,
+            role,
+            onboarding_complete: true,
+          })
+          .eq("id", currentUser.id);
+
+        if (error) throw error;
+
+        applyUser({ ...currentUser, ...updates, role, onboardingComplete: true });
+        return;
+      }
+
+      if (!currentUser) throw new Error("You must be signed in to complete onboarding.");
+      applyUser({ ...currentUser, ...updates, role, onboardingComplete: true });
+    },
+    [applyUser, refreshUser, user]
+  );
+
+  const getPostAuthRedirect = useCallback((authUser: AuthUser | null = user) => {
+    if (!authUser?.onboardingComplete || !authUser.role) {
+      return "/onboarding/select-role";
+    }
+
+    return authUser.role === "recruiter" ? "/recruiter" : "/dashboard";
+  }, [user]);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
-    if (supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        (event: AuthChangeEvent, session) => {
-          if (event === "SIGNED_IN" && session?.user) {
-            const userData = session.user;
-            const savedRole = loadRole();
-            setUser({
-              name: userData.user_metadata?.full_name || userData.email?.split("@")[0] || "User",
-              email: userData.email || "",
-              initials: (userData.user_metadata?.full_name || userData.email || "U")
-                .split(" ")
-                .map((n: string) => n[0])
-                .join("")
-                .toUpperCase()
-                .slice(0, 2),
-              avatarUrl: userData.user_metadata?.avatar_url,
-              id: userData.id,
-              role: savedRole,
-              onboardingComplete: false,
-            });
-            setUserRole(savedRole);
-          } else if (event === "SIGNED_OUT") {
-            setUser(null);
-            setUserRole(null);
-          }
-        }
-      );
-      return () => { subscription.unsubscribe(); };
-    }
-  }, []);
+    if (!supabase) return;
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session) => {
+      if (event === "SIGNED_OUT" || !session?.user) {
+        applyUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      void hydrateSupabaseUser(session.user).finally(() => setIsLoading(false));
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [applyUser, hydrateSupabaseUser]);
 
   useEffect(() => {
-    restoreSession();
+    void Promise.resolve().then(restoreSession);
   }, [restoreSession]);
+
+  const role = user?.role ?? null;
+  const onboardingComplete = Boolean(user?.onboardingComplete);
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        role,
+        onboardingComplete,
         isAuthenticated: user !== null,
         isLoading,
+        loading: isLoading,
         login,
         signUp,
         logout,
         restoreSession,
+        refreshUser,
         setRole,
         completeOnboarding,
-        userRole,
+        getPostAuthRedirect,
+        userRole: role,
       }}
     >
       {children}
@@ -212,5 +392,3 @@ export function useAuth() {
   if (!context) throw new Error("useAuth must be used within an AuthProvider");
   return context;
 }
-
-export { MOCK_AUTH_USER };

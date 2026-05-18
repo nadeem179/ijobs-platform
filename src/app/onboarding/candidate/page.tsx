@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth";
 import { Button } from "@/components/ui/button";
@@ -21,10 +21,26 @@ type Step = "upload" | "parsing" | "review" | "manual" | "done";
 
 export default function CandidateOnboarding() {
   const router = useRouter();
-  const { completeOnboarding } = useAuth();
+  const { user, isLoading, onboardingComplete, completeOnboarding, getPostAuthRedirect } = useAuth();
   const [step, setStep] = useState<Step>("upload");
   const [parsed, setParsed] = useState<ParsedResume | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [name, setName] = useState(user?.name || "");
+  const [headline, setHeadline] = useState("");
+  const [location, setLocation] = useState("");
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+
+    if (onboardingComplete) {
+      router.push(getPostAuthRedirect(user));
+      return;
+    }
+
+    if (user.role === "recruiter") {
+      router.push("/onboarding/recruiter");
+    }
+  }, [getPostAuthRedirect, isLoading, onboardingComplete, router, user]);
 
   const handleFileSelected = async (file: File) => {
     setStep("parsing");
@@ -38,19 +54,29 @@ export default function CandidateOnboarding() {
     }
   };
 
-  const handleConfirmParsed = (data: ParsedResume) => {
-    completeOnboarding();
-    router.push("/jobs");
+  const handleConfirmParsed = async (data: ParsedResume) => {
+    await completeOnboarding("candidate", {
+      name: data.name || user?.name || "",
+      headline: data.headline || "",
+      location: data.location || "",
+    });
+    router.push("/dashboard");
   };
 
-  const handleSkip = () => {
-    completeOnboarding();
-    router.push("/jobs");
+  const handleSkip = async () => {
+    await completeOnboarding("candidate", {
+      name: user?.name || "",
+    });
+    router.push("/dashboard");
   };
 
-  const handleManualComplete = () => {
-    completeOnboarding();
-    router.push("/jobs");
+  const handleManualComplete = async () => {
+    await completeOnboarding("candidate", {
+      name: name || user?.name || "",
+      headline,
+      location,
+    });
+    router.push("/dashboard");
   };
 
   return (
@@ -84,7 +110,7 @@ export default function CandidateOnboarding() {
               Upload your resume
             </h1>
             <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto leading-relaxed">
-              We'll extract your information and pre-fill your profile.
+              We will extract your information and pre-fill your profile.
               You can review and edit everything before we save it.
             </p>
             <UploadZone onFileSelected={handleFileSelected} />
@@ -95,7 +121,7 @@ export default function CandidateOnboarding() {
               onClick={() => setStep("manual")}
             >
               <SkipForward className="h-3.5 w-3.5 mr-1.5" />
-              Skip, I'll fill manually
+              Skip, I will fill manually
             </Button>
           </div>
         )}
@@ -134,7 +160,8 @@ export default function CandidateOnboarding() {
                   Full Name
                 </label>
                 <Input
-                  defaultValue={parsed?.name || ""}
+                  value={name || parsed?.name || user?.name || ""}
+                  onChange={(event) => setName(event.target.value)}
                   placeholder="Your name"
                   className="h-10 text-sm"
                 />
@@ -144,7 +171,8 @@ export default function CandidateOnboarding() {
                   Professional Headline
                 </label>
                 <Input
-                  defaultValue={parsed?.headline || ""}
+                  value={headline || parsed?.headline || ""}
+                  onChange={(event) => setHeadline(event.target.value)}
                   placeholder="e.g. Senior Product Designer"
                   className="h-10 text-sm"
                 />
@@ -154,7 +182,8 @@ export default function CandidateOnboarding() {
                   Location
                 </label>
                 <Input
-                  defaultValue={parsed?.location || ""}
+                  value={location || parsed?.location || ""}
+                  onChange={(event) => setLocation(event.target.value)}
                   placeholder="e.g. San Francisco, CA"
                   className="h-10 text-sm"
                 />
@@ -183,7 +212,7 @@ export default function CandidateOnboarding() {
               <CheckCircle className="h-6 w-6 text-emerald-500" />
             </div>
             <h1 className="text-xl font-bold tracking-tight mb-2">
-              You're all set!
+              You are all set!
             </h1>
             <p className="text-sm text-muted-foreground mb-6">
               Start exploring verified opportunities tailored for you.

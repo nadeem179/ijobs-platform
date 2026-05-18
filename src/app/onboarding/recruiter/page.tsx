@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,34 @@ import { Building2, ArrowRight, CheckCircle } from "lucide-react";
 
 export default function RecruiterOnboarding() {
   const router = useRouter();
-  const { completeOnboarding } = useAuth();
+  const { user, isLoading, onboardingComplete, completeOnboarding, getPostAuthRedirect } = useAuth();
   const [step, setStep] = useState<"company" | "profile" | "done">("company");
+  const [company, setCompany] = useState("");
+  const [name, setName] = useState(user?.name || "");
+  const [headline, setHeadline] = useState("");
+  const [phone, setPhone] = useState("");
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+
+    if (onboardingComplete) {
+      router.push(getPostAuthRedirect(user));
+      return;
+    }
+
+    if (user.role === "candidate") {
+      router.push("/onboarding/candidate");
+    }
+  }, [getPostAuthRedirect, isLoading, onboardingComplete, router, user]);
 
   const handleCompanyDone = () => setStep("profile");
-  const handleComplete = () => {
-    completeOnboarding();
+  const handleComplete = async () => {
+    await completeOnboarding("recruiter", {
+      name: name || user?.name || "",
+      headline,
+      phone,
+    });
+
     router.push("/recruiter");
   };
 
@@ -37,7 +59,12 @@ export default function RecruiterOnboarding() {
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-medium mb-1.5 block">Company Name</label>
-                <Input className="h-10 text-sm" placeholder="Your company" />
+                <Input
+                  className="h-10 text-sm"
+                  placeholder="Your company"
+                  value={company}
+                  onChange={(event) => setCompany(event.target.value)}
+                />
               </div>
               <div>
                 <label className="text-xs font-medium mb-1.5 block">Industry</label>
@@ -61,7 +88,12 @@ export default function RecruiterOnboarding() {
               </div>
               <div>
                 <label className="text-xs font-medium mb-1.5 block">Work Email</label>
-                <Input type="email" className="h-10 text-sm" placeholder="you@company.com" />
+                <Input
+                  type="email"
+                  className="h-10 text-sm"
+                  placeholder="you@company.com"
+                  defaultValue={user?.email || ""}
+                />
               </div>
               <div className="flex gap-3 pt-2">
                 <Button variant="ghost" size="sm" onClick={handleComplete}>Skip for now</Button>
@@ -76,19 +108,35 @@ export default function RecruiterOnboarding() {
         {step === "profile" && (
           <div>
             <h1 className="text-xl font-bold tracking-tight mb-1">Set up your recruiter profile</h1>
-            <p className="text-sm text-muted-foreground mb-5">Let candidates know who they're applying to.</p>
+            <p className="text-sm text-muted-foreground mb-5">Let candidates know who they are applying to.</p>
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-medium mb-1.5 block">Your Name</label>
-                <Input className="h-10 text-sm" placeholder="Your name" />
+                <Input
+                  className="h-10 text-sm"
+                  placeholder="Your name"
+                  value={name || user?.name || ""}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </div>
               <div>
                 <label className="text-xs font-medium mb-1.5 block">Your Role</label>
-                <Input className="h-10 text-sm" placeholder="e.g. Talent Acquisition Lead" />
+                <Input
+                  className="h-10 text-sm"
+                  placeholder="e.g. Talent Acquisition Lead"
+                  value={headline}
+                  onChange={(event) => setHeadline(event.target.value)}
+                />
               </div>
               <div>
                 <label className="text-xs font-medium mb-1.5 block">Phone (optional)</label>
-                <Input type="tel" className="h-10 text-sm" placeholder="+1 (555) 000-0000" />
+                <Input
+                  type="tel"
+                  className="h-10 text-sm"
+                  placeholder="+1 (555) 000-0000"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                />
               </div>
               <div className="flex gap-3 pt-2">
                 <Button variant="ghost" size="sm" onClick={handleComplete}>Skip for now</Button>

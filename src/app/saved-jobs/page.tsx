@@ -3,10 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { ProtectedLayout } from "@/components/navigation/protected-layout";
 import { mockSavedJobs } from "@/data/profile";
 import {
   Bookmark,
-  BookmarkCheck,
   ArrowRight,
   MapPin,
   Clock,
@@ -21,6 +21,7 @@ export default function SavedJobsPage() {
   };
 
   return (
+    <ProtectedLayout>
     <div className="min-h-screen">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8 sm:px-6 lg:px-8">
         {/* Header */}
@@ -99,5 +100,6 @@ export default function SavedJobsPage() {
         )}
       </div>
     </div>
+    </ProtectedLayout>
   );
 }
