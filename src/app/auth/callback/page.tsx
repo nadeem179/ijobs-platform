@@ -1,110 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseClient } from "@/lib/supabase/client";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useAuth } from "@/context/auth";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const { refreshUser, getPostAuthRedirect } = useAuth();
-  const [error, setError] = useState<string | null>(null);
-  const [welcomeName, setWelcomeName] = useState<string | null>(null);
+  const { refreshUser } = useAuth();
 
   useEffect(() => {
-    const handleCallback = async () => {
-      const supabase = getSupabaseClient();
-
-      if (!supabase) {
-        setError("Supabase authentication is not configured.");
-        return;
-      }
-
-      const url = new URL(window.location.href);
-      const oauthError =
-        url.searchParams.get("error_description") ||
-        url.searchParams.get("error") ||
-        new URLSearchParams(window.location.hash.slice(1)).get("error_description") ||
-        new URLSearchParams(window.location.hash.slice(1)).get("error");
-
-      if (oauthError) {
-        setError(oauthError);
-        return;
-      }
-
-      const code = url.searchParams.get("code");
-      if (code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        if (exchangeError) {
-          setError(exchangeError.message);
-          return;
-        }
-      }
-
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        setError(sessionError.message);
-        return;
-      }
-
-      if (!session?.user) {
-        setError("We could not restore your Supabase session. Please try signing in again.");
-        return;
-      }
-
+    const init = async () => {
       const authUser = await refreshUser();
+
       if (!authUser) {
-        setError("Your session was created, but your profile could not be loaded.");
+        router.replace("/");
         return;
       }
 
-      setWelcomeName(authUser.name);
-      window.history.replaceState({}, document.title, "/auth/callback");
+      if (!authUser.role || !authUser.onboardingComplete) {
+        router.replace("/onboarding/select-role");
+        return;
+      }
 
-      const redirectTo =
-  !authUser.onboardingComplete || !authUser.role
-    ? "/onboarding/select-role"
-    : authUser.role === "recruiter"
-    ? "/recruiter"
-    : "/dashboard";
-
-router.replace(redirectTo);
+      if (authUser.role === "recruiter") {
+        router.replace("/recruiter");
+      } else {
+        router.replace("/dashboard");
+      }
     };
 
-    void handleCallback();
-  }, [getPostAuthRedirect, refreshUser, router]);
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="text-center">
-          <p className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>
-          <button
-            onClick={() => router.push("/")}
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Go back home
-          </button>
-        </div>
-      </div>
-    );
-  }
+    void init();
+  }, [refreshUser, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="space-y-4 text-center">
-        <LoadingState variant="spinner" />
-        {welcomeName && (
-          <p className="text-sm font-medium text-muted-foreground">
-            Welcome, {welcomeName}
-          </p>
-        )}
-      </div>
+      <LoadingState variant="spinner" />
     </div>
   );
 }

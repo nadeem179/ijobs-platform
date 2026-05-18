@@ -335,25 +335,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
+  const supabase = getSupabaseClient();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session) => {
-      if (event === "SIGNED_OUT" || !session?.user) {
-        applyUser(null);
-        setIsLoading(false);
-        return;
+  if (!supabase) {
+    setIsLoading(false);
+    return;
+  }
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange(async (event, session) => {
+    console.log("[AUTH EVENT]", event);
+
+    if (event === "SIGNED_OUT") {
+      applyUser(null);
+      setIsLoading(false);
+      return;
+    }
+
+    if (event === "INITIAL_SESSION") {
+      if (session?.user) {
+        await hydrateSupabaseUser(session.user);
       }
 
-      void hydrateSupabaseUser(session.user).finally(() => setIsLoading(false));
-    });
+      setIsLoading(false);
+      return;
+    }
 
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [applyUser, hydrateSupabaseUser]);
+    if (event === "SIGNED_IN") {
+      if (session?.user) {
+        await hydrateSupabaseUser(session.user);
+      }
+
+      setIsLoading(false);
+    }
+  });
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}, []);
 
   useEffect(() => {
     void Promise.resolve().then(restoreSession);
