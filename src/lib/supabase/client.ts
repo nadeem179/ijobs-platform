@@ -1,42 +1,24 @@
-/**
- * Supabase Client
- *
- * Creates and exports a single Supabase client instance.
- * Used by services when real backend features are enabled.
- *
- * When NEXT_PUBLIC_ENABLE_AUTH is false, services fall back to mock data.
- * When true, this client connects to the real Supabase project.
- */
-
 import { createClient } from "@supabase/supabase-js";
-import { supabaseConfig } from "@/lib/config/env";
 
-const supabaseUrl = supabaseConfig.url;
-const supabaseAnonKey = supabaseConfig.anonKey;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Only create the client if credentials are provided
-const hasCredentials = supabaseUrl && supabaseAnonKey;
+console.log("[Supabase] URL exists:", !!supabaseUrl);
+console.log("[Supabase] KEY exists:", !!supabaseAnonKey);
 
-export const supabase = hasCredentials
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-    })
-  : null;
+let supabase = null;
 
-/**
- * Returns the Supabase client if configured, or null.
- * Services should check this before making real API calls.
- */
+if (supabaseUrl && supabaseAnonKey) {
+  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: "pkce",
+    },
+  });
+}
+
 export function getSupabaseClient() {
-  if (!supabaseConfig.enabled) return null;
-  if (!supabase) {
-    console.warn(
-      "Supabase client not initialized. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local"
-    );
-  }
   return supabase;
 }

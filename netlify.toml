@@ -2,5 +2,26 @@
   command = "npm run build"
   publish = ".next"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Netlify's production branch should be set to "main" in:
+# Project configuration > Build & deploy > Continuous deployment.
+[context.production]
+  command = "npm run build"
+  publish = ".next"
+
+[context.production.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Mirrors production settings for the main branch, even if the UI
+# temporarily treats it as a branch deploy during repository setup.
+[context.main]
+  command = "npm run build"
+  publish = ".next"
+
+[context.main.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"

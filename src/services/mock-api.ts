@@ -119,16 +119,3 @@ export async function getRecruiterCandidates(): Promise<RecruiterCandidate[]> {
   return [...mockCandidates];
 }
 
-// ───── Auth (mock session) ─────
-
-export async function mockSignIn(): Promise<{ success: boolean; user: { name: string; email: string } }> {
-  await delay(800);
-  return {
-    success: true,
-    user: { name: "Jane Doe", email: "jane.doe@example.com" },
-  };
-}
-
-export async function mockSignOut(): Promise<void> {
-  await delay(300);
-}
