@@ -35,7 +35,6 @@ export function AuthModal({
     }
 
     setIsLoading(true);
-    setScreen("loading");
     const { error: signInError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -47,6 +46,7 @@ export function AuthModal({
         },
       },
     });
+    onClose();
     setIsLoading(false);
 
     if (signInError) {
@@ -94,17 +94,6 @@ export function AuthModal({
     e.preventDefault();
     await sendEmailLink();
   };
-
-  if (screen === "loading") {
-    return (
-      <div className="space-y-6 text-center">
-        <div className="flex justify-center pt-4">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-        <p className="text-sm text-muted-foreground">Redirecting to Google...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
