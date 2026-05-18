@@ -35,10 +35,6 @@
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
-* {
-  outline: 1px solid red !important;
-}
-
 :root {
   --background: 0 0% 100%;
   --foreground: 0 0% 3.9%;
