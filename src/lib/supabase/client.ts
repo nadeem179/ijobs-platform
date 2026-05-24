@@ -1,23 +1,20 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-console.log("[Supabase] URL exists:", !!supabaseUrl);
-console.log("[Supabase] KEY exists:", !!supabaseAnonKey);
+import { supabaseConfig } from "@/lib/config/env";
 
 let supabase: SupabaseClient | null = null;
 
-if (supabaseUrl && supabaseAnonKey) {
-  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export function getSupabaseClient() {
+  if (!supabaseConfig.enabled) return null;
+  if (typeof window === "undefined") return null;
+
+  supabase ??= createClient(supabaseConfig.url, supabaseConfig.anonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
+      flowType: "pkce",
     },
   });
-}
 
-export function getSupabaseClient() {
   return supabase;
 }

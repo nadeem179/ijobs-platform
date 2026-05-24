@@ -3,6 +3,7 @@
 import type { AuthService, Session } from "@/services/types/service-types";
 import type { AsyncResult } from "@/services/types/service-types";
 import { wrapRequest } from "@/lib/errors";
+import { getLocalAuthCallbackUrl } from "@/lib/auth/redirect";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 function getInitials(nameOrEmail: string): string {
@@ -37,10 +38,7 @@ export const authService: AuthService = {
         email,
         options: {
           shouldCreateUser: true,
-          emailRedirectTo:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/auth/callback`
-              : undefined,
+          emailRedirectTo: getLocalAuthCallbackUrl(),
           data: {
             full_name: name,
             name,

@@ -100,7 +100,7 @@ export function TrustPanel({ job }: TrustPanelProps) {
               Safety Reminder
             </p>
             <p className="text-[11px] text-amber-700/70 dark:text-amber-400/70 mt-1 leading-relaxed">
-              iJobs will never ask for payment or sensitive personal
+              Diplotix will never ask for payment or sensitive personal
               information during the application process.
             </p>
           </div>

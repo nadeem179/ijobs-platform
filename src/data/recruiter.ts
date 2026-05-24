@@ -11,7 +11,7 @@ export const mockRecruiterJobs: RecruiterJob[] = [
   {
     id: "rj-1",
     title: "Senior Frontend Engineer",
-    company: "iJobs",
+    company: "Diplotix",
     location: "San Francisco, CA",
     locationType: "Hybrid",
     salaryMin: 180000,
@@ -40,7 +40,7 @@ export const mockRecruiterJobs: RecruiterJob[] = [
   {
     id: "rj-2",
     title: "Staff Backend Engineer",
-    company: "iJobs",
+    company: "Diplotix",
     location: "Remote",
     locationType: "Remote",
     salaryMin: 200000,
@@ -69,7 +69,7 @@ export const mockRecruiterJobs: RecruiterJob[] = [
   {
     id: "rj-3",
     title: "Product Designer",
-    company: "iJobs",
+    company: "Diplotix",
     location: "New York, NY",
     locationType: "Hybrid",
     salaryMin: 150000,
@@ -98,7 +98,7 @@ export const mockRecruiterJobs: RecruiterJob[] = [
   {
     id: "rj-4",
     title: "Engineering Manager",
-    company: "iJobs",
+    company: "Diplotix",
     location: "San Francisco, CA",
     locationType: "On-site",
     salaryMin: 250000,
@@ -118,7 +118,7 @@ export const mockRecruiterJobs: RecruiterJob[] = [
       "2+ years in engineering management",
       "Strong technical background in web technologies",
     ],
-    status: "draft",
+    status: "paused",
     applicants: 24,
     newApplicants: 3,
     postedAt: "Not published",

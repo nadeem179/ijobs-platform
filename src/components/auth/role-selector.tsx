@@ -4,6 +4,9 @@ import { useAuth } from "@/context/auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Briefcase, Search } from "lucide-react";
+import { LogoWordmark } from "@/branding";
+import { BRAND } from "@/lib/branding";
+import { getNextRouteForProfile } from "@/lib/auth/onboarding-route";
 
 export function RoleSelector() {
   const { user, isLoading, onboardingComplete, setRole, getPostAuthRedirect } = useAuth();
@@ -20,12 +23,7 @@ export function RoleSelector() {
     setIsSaving(true);
     try {
       await setRole(role);
-
-      if (role === "recruiter") {
-        router.push("/onboarding/recruiter");
-      } else {
-        router.push("/onboarding/candidate");
-      }
+      router.push(getNextRouteForProfile({ role, onboarding_complete: false }));
     } finally {
       setIsSaving(false);
     }
@@ -34,11 +32,14 @@ export function RoleSelector() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="max-w-lg w-full text-center">
+        <div className="mb-5 flex justify-center">
+          <LogoWordmark priority />
+        </div>
         <div className="inline-flex items-center rounded-full border border-border/30 bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground mb-5">
-          Welcome to iJobs
+          Welcome to {BRAND.appName}
         </div>
         <h1 className="text-2xl font-bold tracking-tight mb-2">
-          How will you use iJobs?
+          How will you use {BRAND.appName}?
         </h1>
         <p className="text-sm text-muted-foreground mb-8 max-w-sm mx-auto">
           Choose your path. You can always update this later.

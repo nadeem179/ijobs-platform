@@ -27,6 +27,8 @@ export function isDbEnabled(): boolean {
 export async function ensureProfile(userId: string, name: string, email: string) {
   const db = getDb();
   if (!db) return null;
+  void name;
+  void email;
 
   // Check if profile already exists
   const { data: existing } = await db
@@ -42,15 +44,29 @@ export async function ensureProfile(userId: string, name: string, email: string)
     .from("profiles")
     .insert({
       id: userId,
-      name,
-      email,
       role: null,
       onboarding_complete: false,
+      onboarding_step: "select_role",
     })
     .select()
     .single();
 
   if (error) {
+    const message = "message" in error ? String(error.message) : "";
+    if (message.includes("onboarding_step")) {
+      const fallback = await db
+        .from("profiles")
+        .insert({
+          id: userId,
+          role: null,
+          onboarding_complete: false,
+        })
+        .select()
+        .single();
+
+      if (!fallback.error) return fallback.data;
+    }
+
     console.error("Failed to create profile:", error);
     return null;
   }

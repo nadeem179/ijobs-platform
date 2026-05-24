@@ -5,10 +5,13 @@ import Link from "next/link";
 import { useAuth } from "@/context/auth";
 import { cn } from "@/lib/utils";
 import {
+  LayoutDashboard,
   User,
   Briefcase,
+  FileText,
   Bookmark,
   Settings,
+  CircleHelp,
   LogOut,
 } from "lucide-react";
 
@@ -43,15 +46,15 @@ export function ProfileDropdown() {
           { href: "/recruiter/candidates", label: "Candidates", icon: User },
           { href: "/recruiter/post-job", label: "Post Job", icon: Settings },
           { href: "/profile", label: "Company/Profile", icon: User, divider: true },
-          { href: "/profile/edit", label: "Edit Profile", icon: Settings, divider: true },
         ]
       : [
-          { href: "/dashboard", label: "Dashboard", icon: User },
-          { href: "/jobs", label: "Jobs", icon: Briefcase },
-          { href: "/applications", label: "Applications", icon: Briefcase },
-          { href: "/saved-jobs", label: "Saved Jobs", icon: Bookmark },
-          { href: "/profile", label: "Profile", icon: User, divider: true },
-          { href: "/profile/edit", label: "Edit Profile", icon: Settings, divider: true },
+          { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+          { href: "/jobs", label: "Discover Jobs", icon: Briefcase },
+          { href: "/applications", label: "Applications", icon: FileText },
+          { href: "/saved-jobs", label: "Saved", icon: Bookmark },
+          { href: "/profile", label: "Profile", icon: User },
+          { href: "/settings", label: "Settings", icon: Settings },
+          { href: "/faqs", label: "FAQs", icon: CircleHelp, divider: true },
         ];
 
   return (

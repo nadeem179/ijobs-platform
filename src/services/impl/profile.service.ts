@@ -7,13 +7,30 @@
 
 import type { ProfileService, UserProfile, ApplicationItem, SavedJobItem, ApplyData } from "@/services/types/service-types";
 import type { AsyncResult } from "@/services/types/service-types";
-import { wrapRequest } from "@/lib/errors";
+import { ServiceError, wrapRequest } from "@/lib/errors";
+import {
+  FREE_CANDIDATE_DAILY_APPLICATION_LIMIT,
+  checkDailyApplicationLimit,
+} from "@/lib/application-limits";
 import { mockProfile, mockApplications, mockSavedJobs } from "@/data/profile";
+import { jobs } from "@/data/jobs";
+import type {
+  Application,
+  Certification,
+  Education,
+  Experience,
+  PortfolioItem,
+  Profile,
+  SavedJob,
+  SocialLink,
+} from "@/types/profile";
 
 const delay = (ms = 500): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-function toUserProfile(profile: any): UserProfile {
+const candidateApplications: ApplicationItem[] = mockApplications.map(toApplicationItem);
+
+function toUserProfile(profile: Profile): UserProfile {
   return {
     name: profile.name || "",
     headline: profile.headline || "",
@@ -23,7 +40,7 @@ function toUserProfile(profile: any): UserProfile {
     email: profile.email || "",
     phone: profile.phone,
     skills: profile.skills || [],
-    experience: (profile.experience || []).map((exp: any) => ({
+    experience: (profile.experience || []).map((exp: Experience) => ({
       id: exp.id,
       title: exp.role,
       company: exp.company,
@@ -32,7 +49,7 @@ function toUserProfile(profile: any): UserProfile {
       current: !exp.endDate,
       description: exp.description || "",
     })),
-    education: (profile.education || []).map((edu: any) => ({
+    education: (profile.education || []).map((edu: Education) => ({
       id: edu.id,
       institution: edu.institution,
       degree: edu.degree,
@@ -41,7 +58,7 @@ function toUserProfile(profile: any): UserProfile {
       endDate: edu.endYear ? String(edu.endYear) : undefined,
       gpa: undefined,
     })),
-    portfolio: (profile.portfolio || []).map((item: any) => ({
+    portfolio: (profile.portfolio || []).map((item: PortfolioItem) => ({
       id: item.id,
       title: item.title,
       description: item.description || "",
@@ -49,14 +66,14 @@ function toUserProfile(profile: any): UserProfile {
       projectUrl: item.projectUrl,
       technologies: item.tools || [],
     })),
-    certifications: (profile.certifications || []).map((cert: any) => ({
+    certifications: (profile.certifications || []).map((cert: Certification) => ({
       id: cert.id,
       name: cert.name,
       issuer: cert.issuer,
       date: String(cert.year || ""),
       url: cert.credentialUrl,
     })),
-    links: (profile.links || []).map((link: any) => ({
+    links: (profile.links || []).map((link: SocialLink) => ({
       id: link.id,
       platform: link.icon || link.label,
       url: link.url,
@@ -66,20 +83,20 @@ function toUserProfile(profile: any): UserProfile {
   };
 }
 
-function toApplicationItem(app: any): ApplicationItem {
+function toApplicationItem(app: Application): ApplicationItem {
   return {
     id: app.id,
     jobId: app.jobId,
     jobTitle: app.jobTitle,
     company: app.company,
-    status: app.status === "hired" ? "offered" : app.status,
+    status: app.status,
     appliedAt: app.appliedAt,
     updatedAt: app.updatedAt || app.appliedAt,
     notes: undefined,
   };
 }
 
-function toSavedJobItem(sj: any): SavedJobItem {
+function toSavedJobItem(sj: SavedJob): SavedJobItem {
   return {
     id: sj.id,
     jobId: sj.jobId,
@@ -110,7 +127,7 @@ export const profileService: ProfileService = {
   async getApplications(): AsyncResult<ApplicationItem[]> {
     return wrapRequest(async () => {
       await delay(400);
-      return mockApplications.map(toApplicationItem);
+      return [...candidateApplications];
     });
   },
 
@@ -133,9 +150,44 @@ export const profileService: ProfileService = {
     });
   },
 
-  async apply(): AsyncResult<void> {
+  async apply(jobId: string, _data: ApplyData): AsyncResult<void> {
     return wrapRequest(async () => {
       await delay(800);
+
+      if (candidateApplications.some((application) => application.jobId === jobId)) {
+        throw new ServiceError({
+          code: "DUPLICATE_APPLICATION",
+          message: "You have already applied to this job.",
+          status: 409,
+        });
+      }
+
+      // Candidate application limits are enforced here so all apply entry points share the same rule.
+      const candidatePlan = "free";
+      const limit = checkDailyApplicationLimit(candidateApplications, candidatePlan);
+
+      if (!limit.allowed) {
+        throw new ServiceError({
+          code: "APPLICATION_LIMIT_REACHED",
+          message: `Free candidates can apply to ${FREE_CANDIDATE_DAILY_APPLICATION_LIMIT} jobs per day. Upgrade limits will be added here for premium candidates.`,
+          status: 429,
+          details: limit,
+        });
+      }
+
+      const job = jobs.find((item) => item.id === jobId);
+
+      const appliedAt = new Date().toISOString();
+
+      candidateApplications.push({
+        id: `app-${Date.now()}`,
+        jobId,
+        jobTitle: job?.title ?? "Job",
+        company: job?.company ?? "Company",
+        status: "applied",
+        appliedAt,
+        updatedAt: appliedAt,
+      });
     });
   },
 };

@@ -12,7 +12,15 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
   return (
     <div className="flex flex-col sm:flex-row items-start gap-5">
       <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground text-xl font-bold">
-        {profile.avatarInitials}
+        {profile.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt={`${profile.name} profile image`}
+            className="h-full w-full rounded-2xl object-cover"
+          />
+        ) : (
+          profile.avatarInitials
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-1">

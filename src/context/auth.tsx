@@ -12,9 +12,17 @@ import { useRouter } from "next/navigation";
 import type { AuthChangeEvent, User } from "@supabase/supabase-js";
 import { authService } from "@/services";
 import type { Session } from "@/services";
+import {
+  getNextRouteForProfile,
+  getStepForRole,
+  normalizeOnboardingStep,
+  normalizeRole,
+  type OnboardingStep,
+} from "@/lib/auth/onboarding-route";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
-export type UserRole = "candidate" | "recruiter" | null;
+export type UserRole = "candidate" | "recruiter" | "admin" | null;
+type SelectableRole = "candidate" | "recruiter";
 
 export interface AuthUser {
   name: string;
@@ -24,6 +32,7 @@ export interface AuthUser {
   id?: string;
   role: UserRole;
   onboardingComplete: boolean;
+  onboardingStep: OnboardingStep | null;
 }
 
 interface AuthContextType {
@@ -33,14 +42,16 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   loading: boolean;
+  authError: string | null;
   login: (email?: string, password?: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<AuthUser | null>;
   refreshUser: () => Promise<AuthUser | null>;
-  setRole: (role: "candidate" | "recruiter") => Promise<void>;
+  setRole: (role: SelectableRole) => Promise<void>;
+  setOnboardingStep: (step: OnboardingStep) => Promise<void>;
   completeOnboarding: (
-    role?: "candidate" | "recruiter",
+    role?: SelectableRole,
     updates?: Partial<ProfileUpdates>
   ) => Promise<void>;
   getPostAuthRedirect: (authUser?: AuthUser | null) => string;
@@ -49,20 +60,37 @@ interface AuthContextType {
 
 interface ProfileRow {
   id: string;
-  name: string | null;
-  email: string | null;
-  avatar_url: string | null;
-  role: UserRole;
+  name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  role: string | null;
   onboarding_complete: boolean | null;
+  onboarding_step?: string | null;
 }
 
 interface ProfileUpdates {
-  name: string;
+  full_name: string;
   headline: string;
   location: string;
   phone: string;
   avatar_url: string;
 }
+
+type ProfileUpdatePayload = Partial<ProfileUpdates> & {
+  role: SelectableRole;
+  onboarding_complete: boolean;
+  onboarding_step: OnboardingStep;
+};
+
+type SupabaseErrorDetails = {
+  message?: unknown;
+  code?: unknown;
+  details?: unknown;
+  hint?: unknown;
+  name?: unknown;
+  status?: unknown;
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -94,83 +122,210 @@ function toAuthUser(session: Session): AuthUser {
     id: session.user.id,
     role: null,
     onboardingComplete: false,
+    onboardingStep: "select_role",
   };
+}
+
+function isMissingOnboardingStepColumn(error: unknown): boolean {
+  const details = getSupabaseErrorDetails(error);
+  if (!details || typeof details !== "object") return false;
+
+  const message =
+    "message" in details && typeof details.message === "string"
+      ? details.message
+      : "";
+  const code =
+    "code" in details && typeof details.code === "string" ? details.code : "";
+
+  return (
+    code === "42703" ||
+    message.includes("onboarding_step") ||
+    message.includes("Could not find the 'onboarding_step' column")
+  );
+}
+
+function isSchemaColumnError(error: unknown): boolean {
+  const details = getSupabaseErrorDetails(error);
+  if (!details || typeof details !== "object") return false;
+
+  const message =
+    "message" in details && typeof details.message === "string"
+      ? details.message
+      : "";
+  const code =
+    "code" in details && typeof details.code === "string" ? details.code : "";
+
+  return (
+    code === "42703" ||
+    message.includes("schema cache") ||
+    message.includes("Could not find the") ||
+    message.includes("column")
+  );
+}
+
+function getProfileRoutePatch(role: UserRole, onboardingComplete: boolean) {
+  const normalizedRole = normalizeRole(role);
+
+  if (onboardingComplete) {
+    return normalizedRole
+      ? { role: normalizedRole, onboarding_complete: true, onboarding_step: "completed" as const }
+      : { role: null, onboarding_complete: false, onboarding_step: "select_role" as const };
+  }
+
+  if (normalizedRole === "candidate" || normalizedRole === "recruiter") {
+    return {
+      role: normalizedRole,
+      onboarding_complete: false,
+      onboarding_step: getStepForRole(normalizedRole),
+    };
+  }
+
+  return { role: null, onboarding_complete: false, onboarding_step: "select_role" as const };
 }
 
 async function loadProfile(user: User): Promise<ProfileRow | null> {
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id,name,email,avatar_url,role,onboarding_complete")
-    .eq("id", user.id)
-    .maybeSingle<ProfileRow>();
+  const selectAttempts = [
+    "id,name,full_name,email,avatar_url,role,onboarding_complete,onboarding_step",
+    "id,name,full_name,email,avatar_url,role,onboarding_complete",
+    "id,full_name,email,avatar_url,role,onboarding_complete",
+    "id,email,role,onboarding_complete",
+    "id,role,onboarding_complete",
+    "id",
+  ];
 
-  if (error) {
-    console.error("Failed to load profile:", error);
-    return null;
+  let lastError: unknown = null;
+  for (const columns of selectAttempts) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(columns)
+      .eq("id", user.id)
+      .maybeSingle<ProfileRow>();
+
+    if (!error) return data ?? null;
+
+    lastError = error;
+    if (!isSchemaColumnError(error) && !isMissingOnboardingStepColumn(error)) {
+      logProfileError("load", error);
+      throw createProfileSaveError(error);
+    }
   }
 
-  return data ?? null;
+  logProfileError("load", lastError);
+  throw createProfileSaveError(lastError);
+}
+
+async function upsertProfileRouteState(
+  userId: string,
+  patch:
+    | (ReturnType<typeof getProfileRoutePatch> & Partial<ProfileUpdates>)
+    | ({ role: UserRole; onboarding_complete: boolean; onboarding_step: OnboardingStep } & Partial<ProfileUpdates>)
+) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const { error } = await supabase.from("profiles").upsert(
+    {
+      id: userId,
+      ...patch,
+    },
+    { onConflict: "id" }
+  );
+
+  if (!error) return;
+
+  if (isMissingOnboardingStepColumn(error)) {
+    const { onboarding_step: _onboardingStep, ...fallbackPatch } = patch;
+    const fallback = await supabase.from("profiles").upsert(
+      {
+        id: userId,
+        ...fallbackPatch,
+      },
+      { onConflict: "id" }
+    );
+
+    if (fallback.error) throw fallback.error;
+    return;
+  }
+
+  throw error;
 }
 
 async function ensureProfile(user: User): Promise<ProfileRow | null> {
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  const name = getUserName(user);
-  const email = user.email || "";
-  const avatarUrl = user.user_metadata?.avatar_url || null;
   const existing = await loadProfile(user);
 
-  if (existing) {
-    const patch: Partial<ProfileRow> = {};
-    if (!existing.name && name) patch.name = name;
-    if (!existing.email && email) patch.email = email;
-    if (existing.name !== name && name) patch.name = name;
-    if (existing.email !== email && email) patch.email = email;
-    if (existing.avatar_url !== avatarUrl && avatarUrl) patch.avatar_url = avatarUrl;
+  if (existing) return existing;
 
-    if (Object.keys(patch).length > 0) {
-      const { data, error } = await supabase
-        .from("profiles")
-        .update(patch)
-        .eq("id", user.id)
-        .select("id,name,email,avatar_url,role,onboarding_complete")
-        .single<ProfileRow>();
-
-      if (!error && data) return data;
-    }
-
-    return existing;
-  }
+  const insertPayload = {
+    id: user.id,
+    email: user.email || "",
+    full_name: getUserName(user),
+    avatar_url: user.user_metadata?.avatar_url || null,
+    role: null,
+    onboarding_complete: false,
+    onboarding_step: "select_role",
+  };
 
   const { data, error } = await supabase
     .from("profiles")
-    .insert({
-      id: user.id,
-      name,
-      email,
-      avatar_url: avatarUrl,
-      role: null,
-      onboarding_complete: false,
-    })
-    .select("id,name,email,avatar_url,role,onboarding_complete")
+    .insert(insertPayload)
+    .select("id,role,onboarding_complete,onboarding_step")
     .single<ProfileRow>();
 
   if (error) {
-    console.error("Failed to create profile:", error);
-    return null;
+    logProfileError("create", error);
   }
+
+  if (error && getProfileErrorMessage(error).includes("role")) {
+    throw createProfileSaveError(error);
+  }
+
+  if (error && (isMissingOnboardingStepColumn(error) || getProfileErrorMessage(error).includes("column"))) {
+    const fallbackPayload: Partial<typeof insertPayload> = { ...insertPayload };
+    const message = getProfileErrorMessage(error);
+    if (message.includes("onboarding_step")) delete fallbackPayload.onboarding_step;
+    if (message.includes("full_name")) delete fallbackPayload.full_name;
+    if (message.includes("avatar_url")) delete fallbackPayload.avatar_url;
+    if (message.includes("email")) delete fallbackPayload.email;
+
+    const fallback = await supabase
+      .from("profiles")
+      .insert(fallbackPayload)
+      .select("id,role,onboarding_complete")
+      .single<ProfileRow>();
+
+    if (fallback.error) {
+      logProfileError("create", fallback.error);
+      throw createProfileSaveError(fallback.error);
+    }
+
+    return fallback.data;
+  }
+
+  if (error) throw createProfileSaveError(error);
 
   return data;
 }
 
 function mapSupabaseUser(user: User, profile: ProfileRow | null): AuthUser {
-  const name = profile?.name || getUserName(user);
   const email = profile?.email || user.email || "";
+  const name = profile?.full_name || profile?.name || getUserName(user);
   const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url;
+
+  const role = normalizeRole(profile?.role);
+  const onboardingComplete = Boolean(profile?.onboarding_complete) && Boolean(role);
+  const onboardingStep =
+    normalizeOnboardingStep(profile?.onboarding_step) ??
+    (onboardingComplete
+      ? "completed"
+      : role === "candidate" || role === "recruiter"
+        ? getStepForRole(role)
+        : "select_role");
 
   return {
     id: user.id,
@@ -178,14 +333,55 @@ function mapSupabaseUser(user: User, profile: ProfileRow | null): AuthUser {
     email,
     initials: getInitials(name || email || "User"),
     avatarUrl,
-    role: profile?.role ?? null,
-    onboardingComplete: Boolean(profile?.onboarding_complete),
+    role,
+    onboardingComplete,
+    onboardingStep,
   };
+}
+
+function getSupabaseErrorDetails(error: unknown): SupabaseErrorDetails | unknown {
+  if (!error || typeof error !== "object") return error;
+
+  const record = error as SupabaseErrorDetails;
+  return {
+    name: record.name,
+    message: record.message,
+    code: record.code,
+    details: record.details,
+    hint: record.hint,
+    status: record.status,
+  };
+}
+
+function logProfileError(action: string, error: unknown) {
+  console.error(`[AUTH] Profile ${action} failed`, getSupabaseErrorDetails(error));
+}
+
+function getProfileErrorMessage(error: unknown): string {
+  const details = getSupabaseErrorDetails(error);
+  if (details && typeof details === "object" && "message" in details) {
+    const message = details.message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+
+  return "We could not save your role. Please try again.";
+}
+
+function createProfileSaveError(error: unknown): Error {
+  return new Error(getProfileErrorMessage(error));
+}
+
+function logProfileSaveError(action: "upsert", error: unknown) {
+  const detail =
+    error && typeof error === "object" ? getSupabaseErrorDetails(error) : error;
+
+  console.error(`[AUTH] Profile ${action} failed`, detail);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const router = useRouter();
 
   const applyUser = useCallback((nextUser: AuthUser | null) => {
@@ -196,7 +392,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hydrateSupabaseUser = useCallback(
     async (supabaseUser: User): Promise<AuthUser> => {
       const profile = await ensureProfile(supabaseUser);
+      const rawRole = normalizeRole(profile?.role);
+      const hasCorruptCompletedState = profile?.onboarding_complete === true && !rawRole;
+      const hasInvalidRoleValue = Boolean(profile?.role) && !rawRole;
       const authUser = mapSupabaseUser(supabaseUser, profile);
+
+      if (hasCorruptCompletedState || hasInvalidRoleValue) {
+        await upsertProfileRouteState(
+          supabaseUser.id,
+          getProfileRoutePatch(null, false)
+        );
+      }
+
+      setAuthError(null);
       applyUser(authUser);
       return authUser;
     },
@@ -211,6 +419,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } = await supabase.auth.getSession();
 
       if (!session?.user) {
+        setAuthError(null);
         return applyUser(null);
       }
 
@@ -227,6 +436,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return await refreshUser();
     } catch (error) {
       console.error("Failed to restore session:", error);
+      setAuthError(
+        error instanceof Error && error.message
+          ? error.message
+          : "We could not restore your session. Please try again."
+      );
       return applyUser(null);
     } finally {
       setIsLoading(false);
@@ -234,13 +448,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyUser, refreshUser]);
 
   const login = useCallback(
-    async (_email?: string, _password?: string) => {
-      const result = await authService.signIn(_email || "", _password || "");
+    async (email?: string, password?: string) => {
+      const result = await authService.signIn(email || "", password || "");
 
       if (result.data) {
         applyUser(toAuthUser(result.data));
       } else {
-        throw new Error(result.error?.message || "Email authentication requires a verified Supabase session.");
+        throw new Error(
+          result.error?.message ||
+            "Email authentication requires a verified Supabase session."
+        );
       }
     },
     [applyUser]
@@ -263,41 +480,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyUser, router]);
 
   const setRole = useCallback(
-  async (role: "candidate" | "recruiter") => {
+    async (role: SelectableRole) => {
+      const currentUser = user ?? (await refreshUser());
+      if (!currentUser?.id) {
+        throw new Error("You must be signed in before choosing a role.");
+      }
 
-    localStorage.setItem("ijobs_role", role);
-
-    setUser((prev) => {
-      if (!prev) return prev;
-
-      return {
-        ...prev,
-        role,
-      };
-    });
-
-    const supabase = getSupabaseClient();
-
-    if (!supabase || !user?.id) {
-      return;
-    }
-
-    supabase
-      .from("profiles")
-      .upsert({
-        id: user.id,
+      const onboardingStep = getStepForRole(role);
+      await upsertProfileRouteState(currentUser.id, {
         role,
         onboarding_complete: false,
-      })
-      .then(({ error }) => {
-        if (error) {
-          console.error("[ROLE SAVE ERROR]", error);
-        }
+        onboarding_step: onboardingStep,
       });
 
-  },
-  [user]
-);
+      applyUser({
+        ...currentUser,
+        role,
+        onboardingComplete: false,
+        onboardingStep,
+      });
+    },
+    [applyUser, refreshUser, user]
+  );
+
+  const setOnboardingStep = useCallback(
+    async (step: OnboardingStep) => {
+      const currentUser = user ?? (await refreshUser());
+      if (!currentUser?.id) {
+        throw new Error("You must be signed in to update onboarding progress.");
+      }
+
+      await upsertProfileRouteState(currentUser.id, {
+        role: currentUser.role,
+        onboarding_complete: false,
+        onboarding_step: step,
+      });
+
+      applyUser({
+        ...currentUser,
+        onboardingComplete: false,
+        onboardingStep: step,
+      });
+    },
+    [applyUser, refreshUser, user]
+  );
 
   const completeOnboarding = useCallback(
     async (
@@ -306,6 +532,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ) => {
       const role = selectedRole ?? user?.role;
       if (!role) throw new Error("Select a role before completing onboarding.");
+      if (role !== "candidate" && role !== "recruiter") {
+        throw new Error("Choose candidate or recruiter before completing onboarding.");
+      }
 
       const supabase = getSupabaseClient();
       let currentUser = user;
@@ -315,75 +544,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (supabase && currentUser?.id) {
-        const { error } = await supabase
-          .from("profiles")
-          .update({
-            ...updates,
-            role,
-            onboarding_complete: true,
-          })
-          .eq("id", currentUser.id);
+        const payload: ProfileUpdatePayload = {
+          role,
+          onboarding_complete: true,
+          onboarding_step: "completed",
+          ...updates,
+        };
 
-        if (error) throw error;
+        try {
+          await upsertProfileRouteState(currentUser.id, payload);
+        } catch (error) {
+          logProfileSaveError("upsert", error);
+          throw createProfileSaveError(error);
+        }
 
-        applyUser({ ...currentUser, ...updates, role, onboardingComplete: true });
+        applyUser({
+          ...currentUser,
+          name: updates.full_name || currentUser.name,
+          avatarUrl: updates.avatar_url || currentUser.avatarUrl,
+          role,
+          onboardingComplete: true,
+          onboardingStep: "completed",
+        });
         return;
       }
 
       if (!currentUser) throw new Error("You must be signed in to complete onboarding.");
-      applyUser({ ...currentUser, ...updates, role, onboardingComplete: true });
+      applyUser({
+        ...currentUser,
+        ...updates,
+        role,
+        onboardingComplete: true,
+        onboardingStep: "completed",
+      });
     },
     [applyUser, refreshUser, user]
   );
 
   const getPostAuthRedirect = useCallback((authUser: AuthUser | null = user) => {
-    if (!authUser?.onboardingComplete || !authUser.role) {
-      return "/onboarding/select-role";
-    }
-
-    return authUser.role === "recruiter" ? "/recruiter" : "/dashboard";
+    return getNextRouteForProfile(authUser);
   }, [user]);
 
   useEffect(() => {
-  const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient();
 
-  if (!supabase) {
-    setIsLoading(false);
-    return;
-  }
-
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange(async (event, session) => {
-    
-    if (event === "SIGNED_OUT") {
-      applyUser(null);
-      setIsLoading(false);
+    if (!supabase) {
       return;
     }
 
-    if (event === "INITIAL_SESSION") {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session) => {
+      if (event === "SIGNED_OUT") {
+        setAuthError(null);
+        applyUser(null);
+        setIsLoading(false);
+        return;
+      }
+
       if (session?.user) {
-        await hydrateSupabaseUser(session.user);
+        setIsLoading(true);
+        setTimeout(() => {
+          void hydrateSupabaseUser(session.user)
+            .catch((error) => {
+              console.error("Failed to hydrate Supabase session:", error);
+              setAuthError(
+                error instanceof Error && error.message
+                  ? error.message
+                  : "We could not load your account profile. Please try again."
+              );
+              applyUser(null);
+            })
+            .finally(() => {
+              setIsLoading(false);
+            });
+        }, 0);
+        return;
       }
 
       setIsLoading(false);
-      return;
-    }
+    });
 
-    if (event === "SIGNED_IN") {
-      if (session?.user) {
-        await hydrateSupabaseUser(session.user);
-      }
-
-      setIsLoading(false);
-    }
-  });
-
-  return () => {
-    subscription.unsubscribe();
-  };
-}, []);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [applyUser, hydrateSupabaseUser]);
 
   useEffect(() => {
     void Promise.resolve().then(restoreSession);
@@ -401,12 +646,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: user !== null,
         isLoading,
         loading: isLoading,
+        authError,
         login,
         signUp,
         logout,
         restoreSession,
         refreshUser,
         setRole,
+        setOnboardingStep,
         completeOnboarding,
         getPostAuthRedirect,
         userRole: role,

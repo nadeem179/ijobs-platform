@@ -13,7 +13,7 @@ export interface RecruiterJob {
   description: string;
   responsibilities: string[];
   requirements: string[];
-  status: "active" | "draft" | "paused";
+  status: "active" | "inactive" | "paused" | "closed" | "filled";
   applicants: number;
   newApplicants: number;
   postedAt: string;
@@ -33,6 +33,11 @@ export interface RecruiterCandidate {
   appliedAt: string;
   profileStrength: number;
   status: "new" | "reviewed" | "shortlisted" | "rejected";
+  viewedAt?: string | null;
+  resumeDownloadedAt?: string | null;
+  shortlistedAt?: string | null;
+  rejectedAt?: string | null;
+  hiredAt?: string | null;
 }
 
 export interface RecruiterStats {

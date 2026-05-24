@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ProtectedLayout } from "@/components/navigation/protected-layout";
-import { mockSavedJobs } from "@/data/profile";
+import { useSavedJobs } from "@/hooks/use-saved-jobs";
 import {
   Bookmark,
   ArrowRight,
@@ -14,14 +13,10 @@ import {
 } from "lucide-react";
 
 export default function SavedJobsPage() {
-  const [savedJobs, setSavedJobs] = useState(mockSavedJobs);
-
-  const removeJob = (id: string) => {
-    setSavedJobs(savedJobs.filter((j) => j.id !== id));
-  };
+  const { savedJobs, toggleSavedJob } = useSavedJobs();
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout allowedRoles={["candidate"]}>
     <div className="min-h-screen">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8 sm:px-6 lg:px-8">
         {/* Header */}
@@ -65,7 +60,7 @@ export default function SavedJobsPage() {
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="text-sm font-medium">{job.title}</h3>
                     <button
-                      onClick={() => removeJob(job.id)}
+                      onClick={() => void toggleSavedJob(job.jobId)}
                       className="text-muted-foreground/40 hover:text-red-500 transition-colors"
                       aria-label="Remove saved job"
                     >

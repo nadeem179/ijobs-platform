@@ -1,3 +1,6 @@
+import { LogoWordmark } from "@/branding";
+import { BRAND } from "@/lib/branding";
+
 interface RoleSelectorProps {
   selected: string | null;
   onSelect: (role: string) => void;
@@ -10,8 +13,11 @@ export function RoleSelector({
   return (
     <div className="space-y-6">
       <div className="text-center">
+        <div className="mb-5 flex justify-center">
+          <LogoWordmark priority />
+        </div>
         <h1 className="text-3xl font-bold">
-          How will you use iJobs?
+          How will you use {BRAND.appName}?
         </h1>
 
         <p className="text-muted-foreground mt-2">

@@ -1,30 +1,37 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { AuthProvider } from "@/context/auth";
 import { ToastProvider } from "@/components/ui/toast";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { BRAND, BRAND_METADATA } from "@/lib/branding";
+import { appConfig } from "@/lib/config/env";
 
 export const metadata: Metadata = {
-  title: "iJobs — Modern Hiring Platform",
-  description:
-    "Find verified opportunities faster. iJobs connects quality talent with trusted employers. Salary transparency, verified recruiters, and real response rates.",
+  metadataBase: new URL(appConfig.url || "http://localhost:3000"),
+  title: {
+    default: BRAND_METADATA.title,
+    template: `%s | ${BRAND.appName}`,
+  },
+  description: BRAND.description,
+  applicationName: BRAND.appName,
+  icons: {
+    icon: BRAND.faviconPath,
+    shortcut: BRAND.faviconPath,
+    apple: BRAND.logoIconPath,
+  },
   openGraph: {
-    title: "iJobs — Modern Hiring Platform",
-    description:
-      "Find verified opportunities faster. Trusted hiring for modern professionals.",
-    siteName: "iJobs",
+    title: BRAND_METADATA.openGraphTitle,
+    description: BRAND.description,
+    siteName: BRAND.appName,
+    images: [
+      {
+        url: BRAND.logoBlackPath,
+        width: 600,
+        height: 241,
+        alt: BRAND.appName,
+      },
+    ],
   },
 };
 
@@ -33,27 +40,17 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-  <AuthProvider>
-    <ToastProvider>
-
-      <Header />
-
-      <main className="flex-1">
-        {children}
-      </main>
-
-      <Footer />
-
-    </ToastProvider>
-  </AuthProvider>
-</body>
+        <AuthProvider>
+          <ToastProvider>
+            <Header />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </ToastProvider>
+        </AuthProvider>
+      </body>
     </html>
   );
 }

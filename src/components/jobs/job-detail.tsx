@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   MapPin,
   Briefcase,
@@ -11,16 +12,32 @@ import {
   ArrowLeft,
   Check,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SkillBadge } from "@/components/jobs/skill-badge";
 import { TrustPanel } from "@/components/jobs/trust-panel";
 import { CompanyCard } from "@/components/jobs/company-card";
+import { CompanyProfileModal, type CompanyProfileSummary } from "@/components/jobs/company-profile-modal";
 import { ApplyModal } from "@/components/apply/apply-modal";
+import { ApplicationStatus } from "@/components/applications/application-status";
 import { SkeletonDetail } from "@/components/jobs/skeleton-detail";
 import { Job } from "@/types/job";
 import { jobs } from "@/data/jobs";
+import { useApplications } from "@/hooks/use-applications";
+import { useSavedJobs } from "@/hooks/use-saved-jobs";
+import { useToast } from "@/components/ui/toast";
+import { useAuth } from "@/context/auth";
+import { getSupabaseClient } from "@/lib/supabase/client";
+import { isSchemaQueryError } from "@/lib/supabase/query-errors";
+import { storeRecentlyViewedJob } from "@/lib/jobs/recently-viewed";
+import {
+  normalizeScreeningQuestions,
+  screeningTypeNeedsOptions,
+  type ScreeningAnswer,
+  type ScreeningQuestion,
+} from "@/types/screening";
 
 function formatSalary(job: Job) {
   const min = job.salaryCurrency + (job.salaryMin / 1000).toFixed(0) + "K";
@@ -33,21 +50,199 @@ interface JobDetailProps {
   jobId: string;
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export function JobDetail({ jobId }: JobDetailProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [job, setJob] = useState<Job | null>(null);
-  const [saved, setSaved] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
+  const [screeningOpen, setScreeningOpen] = useState(false);
+  const [screeningStep, setScreeningStep] = useState(0);
+  const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string | string[]>>({});
+  const [screeningError, setScreeningError] = useState("");
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [hasApplied, setHasApplied] = useState(false);
+  const { getApplicationForJob, applyToJob, loaded: applicationsLoaded } = useApplications();
+  const { isSaved, toggleSavedJob, savingIds } = useSavedJobs();
+  const { showToast } = useToast();
+  const {
+    isAuthenticated,
+    isLoading: authLoading,
+    user,
+    role,
+    onboardingComplete,
+    getPostAuthRedirect,
+  } = useAuth();
+  const userId = user?.id;
 
   useEffect(() => {
-    setLoading(true);
-    const timer = setTimeout(() => {
+    const loadingTimer = window.setTimeout(() => {
+      setLoading(true);
+    }, 0);
+    const timer = window.setTimeout(() => {
       const found = jobs.find((j) => j.id === jobId) || null;
-      setJob(found);
-      setLoading(false);
+      if (found) {
+        setJob(found);
+        setLoading(false);
+        return;
+      }
+
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        setJob(null);
+        setLoading(false);
+        return;
+      }
+
+      void (async () => {
+        try {
+          const { data } = await supabase
+            .from("jobs")
+            .select("*")
+            .eq("id", jobId)
+            .maybeSingle();
+          if (!data) {
+            setJob(null);
+            return;
+          }
+          const row = data as Record<string, unknown>;
+          const company = String(row.company_name || row.company || "Company");
+          setJob({
+            id: String(row.id),
+            title: String(row.title || "Job"),
+            company,
+            companyLogo: String(row.company_logo || company.slice(0, 1).toUpperCase()),
+            companyDescription: String(row.company_description || ""),
+            companySize: String(row.company_size || ""),
+            companyIndustry: String(row.company_industry || ""),
+            location: String(row.location || ""),
+            locationType:
+              row.location_type === "Hybrid" || row.location_type === "On-site"
+                ? row.location_type
+                : "Remote",
+            jobType:
+              row.job_type === "Contract" ||
+              row.job_type === "Part-time" ||
+              row.job_type === "Internship"
+                ? row.job_type
+                : "Full-time",
+            salaryMin: Number(row.salary_min || 0),
+            salaryMax: Number(row.salary_max || 0),
+            salaryCurrency: String(row.salary_currency || "$"),
+            salaryPeriod: row.salary_period === "hour" ? "hour" : "year",
+            experienceLevel:
+              row.experience_level === "Entry" ||
+              row.experience_level === "Senior" ||
+              row.experience_level === "Lead" ||
+              row.experience_level === "Staff"
+                ? row.experience_level
+                : "Mid",
+            skills: Array.isArray(row.skills) ? (row.skills as string[]) : [],
+            description: String(row.description || ""),
+            responsibilities: Array.isArray(row.responsibilities)
+              ? (row.responsibilities as string[])
+              : [],
+            requirements: Array.isArray(row.requirements) ? (row.requirements as string[]) : [],
+            preferredQualifications: Array.isArray(row.preferred_qualifications)
+              ? (row.preferred_qualifications as string[])
+              : [],
+            benefits: Array.isArray(row.benefits) ? (row.benefits as string[]) : [],
+            screeningQuestions: normalizeScreeningQuestions(row.screening_questions),
+            postedAt: "recently",
+            verifiedRecruiter: true,
+            activeHiring: row.status === "active",
+            responseRate: 0,
+            saved: false,
+            featured: Boolean(row.featured),
+            status: row.status === "active" ? "active" : "inactive",
+          });
+        } finally {
+          setLoading(false);
+        }
+      })();
     }, 400);
-    return () => clearTimeout(timer);
+    return () => {
+      window.clearTimeout(loadingTimer);
+      window.clearTimeout(timer);
+    };
   }, [jobId]);
+
+  useEffect(() => {
+    if (!job) return;
+
+    storeRecentlyViewedJob({
+      id: job.id,
+      title: job.title,
+      company: job.company,
+      companyLogo: job.companyLogo,
+      location: job.location,
+      locationType: job.locationType,
+      salary: formatSalary(job),
+    });
+  }, [job]);
+
+  const checkExistingApplication = useCallback(
+    async (targetJobId: string) => {
+      if (!isAuthenticated || role !== "candidate" || !userId) return false;
+      const supabase = getSupabaseClient();
+      if (!supabase) return false;
+
+      const jobColumn = isUuid(targetJobId) ? "job_id" : "job_external_id";
+      const identityAttempts = [
+        { type: "or" as const },
+        { type: "eq" as const, column: "candidate_id" },
+        { type: "eq" as const, column: "user_id" },
+      ];
+
+      for (const identity of identityAttempts) {
+        let query = supabase
+          .from("applications")
+          .select("id,status")
+          .eq(jobColumn, targetJobId)
+          .limit(1);
+
+        query =
+          identity.type === "or"
+            ? query.or(`candidate_id.eq.${userId},user_id.eq.${userId}`)
+            : query.eq(identity.column, userId);
+
+        const { data, error } = await query.maybeSingle();
+        if (!error) return Boolean(data);
+        if (!isSchemaQueryError(error)) return false;
+      }
+
+      return false;
+    },
+    [isAuthenticated, role, userId]
+  );
+
+  useEffect(() => {
+    if (!job || authLoading) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!isAuthenticated || role !== "candidate") {
+        if (!cancelled) setHasApplied(false);
+        return;
+      }
+
+      void (async () => {
+        const alreadyApplied = await checkExistingApplication(job.id);
+        if (!cancelled) setHasApplied(alreadyApplied);
+      })();
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authLoading, checkExistingApplication, isAuthenticated, job, role]);
 
   const relatedJobs = job
     ? jobs
@@ -60,6 +255,227 @@ export function JobDetail({ jobId }: JobDetailProps) {
         )
         .slice(0, 3)
     : [];
+
+  const application = job ? getApplicationForJob(job.id) : null;
+  const applied = hasApplied || Boolean(application);
+  const saved = job ? isSaved(job.id) : false;
+  const screeningQuestions = job?.screeningQuestions ?? [];
+  const pendingApplyReturn = searchParams.get("apply") === "1";
+  const blockedRoleMessage = "Only candidates can apply to jobs.";
+
+  const updateScreeningAnswer = (questionId: string, value: string | string[]) => {
+    setScreeningAnswers((current) => ({ ...current, [questionId]: value }));
+    setScreeningError("");
+  };
+
+  const isQuestionAnswered = (question: ScreeningQuestion) => {
+    const answer = screeningAnswers[question.id];
+    if (Array.isArray(answer)) return answer.length > 0;
+    return typeof answer === "string" && answer.trim().length > 0;
+  };
+
+  const buildScreeningAnswers = (): ScreeningAnswer[] =>
+    screeningQuestions
+      .map((question) => ({
+        question_id: question.id,
+        question: question.question,
+        type: question.type,
+        answer: screeningAnswers[question.id] ?? (screeningTypeNeedsOptions(question.type) ? [] : ""),
+      }))
+      .filter((answer) =>
+        Array.isArray(answer.answer)
+          ? answer.answer.length > 0
+          : answer.answer.trim().length > 0
+      );
+
+  const validateCurrentQuestion = () => {
+    const question = screeningQuestions[screeningStep];
+    if (!question || !question.required || isQuestionAnswered(question)) return true;
+    setScreeningError("This question is required.");
+    return false;
+  };
+
+  const handleScreeningNext = () => {
+    if (!validateCurrentQuestion()) return;
+    setScreeningStep((current) => Math.min(current + 1, screeningQuestions.length - 1));
+  };
+
+  const handleScreeningSubmit = async () => {
+    if (applied) {
+      setScreeningOpen(false);
+      return;
+    }
+    if (!validateCurrentQuestion()) return;
+    const missingRequired = screeningQuestions.find(
+      (question) => question.required && !isQuestionAnswered(question)
+    );
+    if (missingRequired) {
+      setScreeningStep(screeningQuestions.indexOf(missingRequired));
+      setScreeningError("This question is required.");
+      return;
+    }
+
+    const submitted = await submitEasyApply(buildScreeningAnswers());
+    if (submitted) {
+      setScreeningOpen(false);
+      setScreeningAnswers({});
+    }
+  };
+
+  const submitEasyApply = useCallback(async (answers?: ScreeningAnswer[]) => {
+    if (!job || applying || applied) {
+      if (applied) showToast("You have already applied to this job.", "error");
+      return false;
+    }
+
+    const alreadyApplied = await checkExistingApplication(job.id);
+    if (alreadyApplied) {
+      setHasApplied(true);
+      showToast("You have already applied to this job.", "error");
+      return false;
+    }
+
+    setApplying(true);
+    const result = await applyToJob(job.id, { screeningAnswers: answers ?? [] });
+    setApplying(false);
+
+    if (result.error) {
+      if (result.error.toLowerCase().includes("already applied")) {
+        const rowExists = await checkExistingApplication(job.id);
+        if (rowExists || result.application) setHasApplied(true);
+      }
+      showToast(result.error, "error");
+      return false;
+    }
+
+    setHasApplied(true);
+    showToast("You have successfully applied for this job.", "success");
+    return true;
+  }, [applied, applyToJob, applying, checkExistingApplication, job, showToast]);
+
+  const openApplyFlow = () => {
+    if (authLoading || !job) return;
+
+    if (!isAuthenticated) {
+      setApplyOpen(true);
+      return;
+    }
+
+    const nextRoute = getPostAuthRedirect(user);
+    if (!onboardingComplete || !role) {
+      router.replace(nextRoute);
+      return;
+    }
+
+    if (role !== "candidate") {
+      showToast(blockedRoleMessage, "error");
+      router.replace(nextRoute);
+      return;
+    }
+
+    if (applied) {
+      showToast("You have already applied to this job.", "error");
+      return;
+    }
+
+    if ((job.screeningQuestions ?? []).length > 0) {
+      setScreeningStep(0);
+      setScreeningError("");
+      setScreeningOpen(true);
+      return;
+    }
+
+    void submitEasyApply();
+  };
+
+  const handleToggleSaved = async () => {
+    if (!job) return;
+    if (!isAuthenticated || role !== "candidate") {
+      showToast("Sign in as a candidate to save jobs.", "error");
+      return;
+    }
+    const result = await toggleSavedJob(job.id);
+    if (result.error) {
+      showToast(result.error, "error");
+      return;
+    }
+    showToast(result.saved ? "Job saved." : "Job removed from saved jobs.", "success");
+  };
+
+  const companySummary: CompanyProfileSummary | null = job
+    ? {
+        name: job.company,
+        logo: job.companyLogo,
+        industry: job.companyIndustry,
+        size: job.companySize,
+        description: job.companyDescription,
+        activeJobs: jobs.filter((item) => item.company === job.company && item.status !== "closed").length,
+      }
+    : null;
+
+  useEffect(() => {
+    if (
+      applyOpen ||
+      applying ||
+      !pendingApplyReturn ||
+      authLoading ||
+      loading ||
+      !applicationsLoaded ||
+      !job
+    ) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      return;
+    }
+
+    const nextRoute = getPostAuthRedirect(user);
+    if (!onboardingComplete || !role) {
+      router.replace(nextRoute);
+      return;
+    }
+
+    if (role !== "candidate") {
+      showToast(blockedRoleMessage, "error");
+      router.replace(nextRoute);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (applied) {
+        showToast("You have already applied to this job.", "error");
+      } else if ((job.screeningQuestions ?? []).length > 0) {
+        setScreeningStep(0);
+        setScreeningError("");
+        setScreeningOpen(true);
+      } else {
+        void submitEasyApply();
+      }
+      router.replace(pathname);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    applicationsLoaded,
+    applied,
+    authLoading,
+    blockedRoleMessage,
+    getPostAuthRedirect,
+    isAuthenticated,
+    job,
+    loading,
+    onboardingComplete,
+    pathname,
+    applyOpen,
+    applying,
+    pendingApplyReturn,
+    role,
+    router,
+    submitEasyApply,
+    showToast,
+    user,
+  ]);
 
   if (loading) return <SkeletonDetail />;
 
@@ -127,7 +543,8 @@ export function JobDetail({ jobId }: JobDetailProps) {
                       </p>
                     </div>
                     <button
-                      onClick={() => setSaved(!saved)}
+                      onClick={() => void handleToggleSaved()}
+                      disabled={job ? savingIds.has(job.id) : false}
                       className="shrink-0 rounded-lg p-2 -mr-1 text-muted-foreground/40 hover:text-foreground transition-colors"
                       aria-label={saved ? "Unsave" : "Save"}
                     >
@@ -195,18 +612,27 @@ export function JobDetail({ jobId }: JobDetailProps) {
                 <Button
                   size="lg"
                   className="rounded-xl text-sm h-11 px-8"
-                  onClick={() => setApplyOpen(true)}
+                  onClick={openApplyFlow}
+                  disabled={authLoading || applying || applied}
                 >
-                  Apply for this job
+                  {applied ? "Applied" : applying ? "Applying..." : "Apply for this job"}
                 </Button>
+                {applied && <ApplicationStatus status={application?.status || "applied"} />}
                 <Button
                   variant="outline"
                   size="lg"
                   className="rounded-xl text-sm h-11 px-6"
+                  onClick={() => setCompanyOpen(true)}
                 >
                   View company profile
                 </Button>
               </div>
+              {screeningQuestions.length > 0 && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  This application includes {screeningQuestions.length} screening{" "}
+                  {screeningQuestions.length === 1 ? "question" : "questions"}.
+                </p>
+              )}
             </section>
 
             {/* Overview */}
@@ -337,15 +763,17 @@ export function JobDetail({ jobId }: JobDetailProps) {
         <Button
           size="lg"
           className="flex-1 rounded-xl text-sm h-11"
-          onClick={() => setApplyOpen(true)}
+          onClick={openApplyFlow}
+          disabled={authLoading || applying || applied}
         >
-          Apply Now
+          {applied ? "Applied" : applying ? "Applying..." : "Apply Now"}
         </Button>
         <Button
           variant="outline"
           size="lg"
           className="rounded-xl text-sm h-11 px-4"
-          onClick={() => setSaved(!saved)}
+          onClick={() => void handleToggleSaved()}
+          disabled={job ? savingIds.has(job.id) : false}
         >
           {saved ? (
             <BookmarkCheck className="h-4 w-4 text-primary" />
@@ -355,12 +783,171 @@ export function JobDetail({ jobId }: JobDetailProps) {
         </Button>
       </div>
 
+      {screeningOpen && screeningQuestions.length > 0 && (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/20"
+            onClick={() => {
+              if (!applying) setScreeningOpen(false);
+            }}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-full max-w-full flex-col border-r border-border/40 bg-background shadow-xl sm:max-w-[480px]">
+            <div className="border-b border-border/30 px-5 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold">Apply for this job</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Question {screeningStep + 1} of {screeningQuestions.length}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScreeningOpen(false)}
+                  disabled={applying}
+                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                  aria-label="Close application questions"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="mt-4 h-1 rounded-full bg-muted">
+                <div
+                  className="h-1 rounded-full bg-foreground transition-all"
+                  style={{
+                    width: `${((screeningStep + 1) / screeningQuestions.length) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-6">
+              {(() => {
+                const question = screeningQuestions[screeningStep];
+                if (!question) return null;
+                const answer = screeningAnswers[question.id];
+                const selectedAnswers = Array.isArray(answer) ? answer : [];
+
+                return (
+                  <div>
+                    <div className="mb-4">
+                      <p className="text-sm font-medium leading-relaxed">
+                        {question.question}
+                        {question.required && <span className="ml-1 text-destructive">*</span>}
+                      </p>
+                      {!question.required && (
+                        <p className="mt-1 text-xs text-muted-foreground">Optional</p>
+                      )}
+                    </div>
+
+                    {question.type === "text" ? (
+                      <textarea
+                        value={typeof answer === "string" ? answer : ""}
+                        onChange={(event) =>
+                          updateScreeningAnswer(question.id, event.target.value)
+                        }
+                        className="min-h-[140px] w-full resize-y rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        placeholder="Type your answer..."
+                      />
+                    ) : question.type === "single_choice" ? (
+                      <div className="space-y-2">
+                        {question.options.map((option) => (
+                          <label
+                            key={option}
+                            className="flex items-center gap-3 rounded-xl border border-border/30 px-3 py-2.5 text-sm"
+                          >
+                            <input
+                              type="radio"
+                              name={`screening-${question.id}`}
+                              checked={answer === option}
+                              onChange={() => updateScreeningAnswer(question.id, option)}
+                              className="h-4 w-4 border-input"
+                            />
+                            <span>{option}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {question.options.map((option) => (
+                          <label
+                            key={option}
+                            className="flex items-center gap-3 rounded-xl border border-border/30 px-3 py-2.5 text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedAnswers.includes(option)}
+                              onChange={(event) => {
+                                const next = event.target.checked
+                                  ? [...selectedAnswers, option]
+                                  : selectedAnswers.filter((item) => item !== option);
+                                updateScreeningAnswer(question.id, next);
+                              }}
+                              className="h-4 w-4 rounded border-input"
+                            />
+                            <span>{option}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                    {screeningError && (
+                      <p className="mt-3 text-xs text-destructive">{screeningError}</p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border/30 px-5 py-4">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                onClick={() => {
+                  setScreeningError("");
+                  setScreeningStep((current) => Math.max(0, current - 1));
+                }}
+                disabled={applying || screeningStep === 0}
+              >
+                Back
+              </Button>
+              {screeningStep === screeningQuestions.length - 1 ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => void handleScreeningSubmit()}
+                  disabled={applying || applied}
+                >
+                  {applying ? "Submitting..." : "Submit Application"}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={handleScreeningNext}
+                  disabled={applying}
+                >
+                  Next
+                </Button>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
+
       {/* Apply Modal */}
       <ApplyModal
         isOpen={applyOpen}
         onClose={() => setApplyOpen(false)}
-        jobTitle={job.title}
-        companyName={job.company}
+        continueTo={`${pathname}?apply=1`}
+      />
+      <CompanyProfileModal
+        company={companySummary}
+        isOpen={companyOpen}
+        onClose={() => setCompanyOpen(false)}
       />
     </div>
   );

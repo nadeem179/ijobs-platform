@@ -1,3 +1,5 @@
+import type { ScreeningQuestion } from "@/types/screening";
+
 export interface Job {
   id: string;
   title: string;
@@ -8,6 +10,7 @@ export interface Job {
   companyIndustry: string;
   location: string;
   locationType: "Remote" | "Hybrid" | "On-site";
+  jobType: "Full-time" | "Contract" | "Part-time" | "Internship";
   salaryMin: number;
   salaryMax: number;
   salaryCurrency: string;
@@ -25,17 +28,26 @@ export interface Job {
   responseRate: number;
   saved: boolean;
   featured: boolean;
+  status?: "active" | "inactive" | "paused" | "closed" | "filled";
+  screeningQuestions?: ScreeningQuestion[];
 }
 
 export interface FilterState {
   query: string;
+  designation: string;
   location: string;
+  jobType: string[];
   experienceLevel: string[];
+  skills: string[];
   salaryMin: number;
   salaryMax: number;
+  freshness: "any" | "24h" | "3d" | "7d" | "14d" | "30d";
   remoteOnly: boolean;
   verifiedOnly: boolean;
+  easyApply: boolean;
+  activeOnly: boolean;
   locationType: string[];
+  sort: "relevant" | "recent" | "salary";
 }
 
 export const EXPERIENCE_ORDER: Record<string, number> = {

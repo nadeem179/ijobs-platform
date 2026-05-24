@@ -12,7 +12,7 @@ export function ParsingProgress() {
         Reading your resume
       </h2>
       <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
-        We're extracting your information. You'll be able to review
+        We&apos;re extracting your information. You&apos;ll be able to review
         and edit everything before we save it.
       </p>
       <div className="mx-auto mt-6 h-1.5 w-48 rounded-full bg-muted overflow-hidden">

@@ -6,7 +6,7 @@ const STORAGE_KEY = "ijobs_jobs_posted";
 
 /**
  * Tracks how many jobs a recruiter has posted.
- * First job is free; subsequent jobs require payment.
+ * First job is free; subsequent jobs require a payment placeholder.
  *
  * Replace with real backend counting when Supabase is integrated.
  */
@@ -64,7 +64,7 @@ export function getUpgradeMessage(jobsPosted: number) {
   return {
     title: "Upgrade to post more jobs",
     message:
-      "You've used your free listing. Upgrade to Recruiter Starter ($99/mo) for up to 3 active job postings.",
+      "You've used your free listing. Extra job posts are ₹500 each. Payment integration will be connected when billing is ready.",
     cta: "View Pricing",
   };
 }

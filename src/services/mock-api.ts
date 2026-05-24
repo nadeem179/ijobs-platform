@@ -29,23 +29,64 @@ import { RecruiterJob, RecruiterCandidate, RecruiterStats } from "@/types/recrui
 const delay = (ms = 600): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+function getLocationSearchText(job: Job) {
+  const extra = job as Job & {
+    location_type?: string;
+    workArrangement?: string;
+    work_arrangement?: string;
+  };
+
+  return [
+    job.location,
+    job.locationType,
+    extra.location_type,
+    extra.workArrangement,
+    extra.work_arrangement,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 function filterJobs(jobs: Job[], filters: FilterState): Job[] {
+  const freshnessLimit =
+    filters.freshness === "24h"
+      ? 1
+      : filters.freshness === "7d"
+        ? 7
+        : filters.freshness === "14d"
+          ? 14
+          : null;
+
   return jobs.filter((job) => {
+    if (filters.activeOnly && !job.activeHiring) return false;
+
     if (filters.query) {
       const q = filters.query.toLowerCase();
       if (
         !job.title.toLowerCase().includes(q) &&
         !job.company.toLowerCase().includes(q) &&
-        !job.skills.some((s) => s.toLowerCase().includes(q))
+        !job.skills.some((s) => s.toLowerCase().includes(q)) &&
+        !getLocationSearchText(job).includes(q)
       ) {
         return false;
       }
     }
-    if (filters.location && !job.location.toLowerCase().includes(filters.location.toLowerCase())) {
+    if (filters.location && !getLocationSearchText(job).includes(filters.location.toLowerCase())) {
       return false;
     }
     if (filters.experienceLevel.length > 0 && !filters.experienceLevel.includes(job.experienceLevel)) {
       return false;
+    }
+    if (filters.jobType.length > 0 && !filters.jobType.includes(job.jobType)) {
+      return false;
+    }
+    if (filters.skills.length > 0) {
+      const selectedSkills = filters.skills.map((skill) => skill.toLowerCase());
+      const jobSkills = job.skills.map((skill) => skill.toLowerCase());
+      if (!selectedSkills.every((skill) => jobSkills.some((jobSkill) => jobSkill.includes(skill)))) {
+        return false;
+      }
     }
     if (filters.salaryMin > 0 && job.salaryMax < filters.salaryMin) return false;
     if (filters.salaryMax > 0 && job.salaryMin > filters.salaryMax) return false;
@@ -53,6 +94,18 @@ function filterJobs(jobs: Job[], filters: FilterState): Job[] {
     if (filters.verifiedOnly && !job.verifiedRecruiter) return false;
     if (filters.locationType.length > 0 && !filters.locationType.includes(job.locationType)) {
       return false;
+    }
+    if (freshnessLimit !== null) {
+      const normalized = job.postedAt.toLowerCase();
+      const amount = Number(normalized.match(/\d+/)?.[0] ?? 1);
+      const ageDays = normalized.includes("week")
+        ? amount * 7
+        : normalized.includes("month")
+          ? amount * 30
+          : normalized.includes("day")
+            ? amount
+            : 0;
+      if (ageDays > freshnessLimit) return false;
     }
     return true;
   });
@@ -63,7 +116,7 @@ function filterJobs(jobs: Job[], filters: FilterState): Job[] {
 export async function getJobs(filters?: FilterState): Promise<Job[]> {
   await delay();
   if (filters) return filterJobs([...jobsData], filters);
-  return [...jobsData];
+  return jobsData.filter((job) => job.activeHiring);
 }
 
 export async function getJobById(id: string): Promise<Job | null> {

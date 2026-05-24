@@ -1,5 +1,7 @@
 "use client";
 
+import { LogoIcon } from "@/branding";
+
 interface LoadingStateProps {
   variant?: "spinner" | "skeleton";
   rows?: number;
@@ -9,7 +11,10 @@ export function LoadingState({ variant = "spinner", rows = 3 }: LoadingStateProp
   if (variant === "spinner") {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+        <div className="relative flex h-10 w-10 items-center justify-center">
+          <div className="absolute inset-0 animate-spin rounded-full border border-muted-foreground/20 border-t-muted-foreground/70" />
+          <LogoIcon size={20} />
+        </div>
       </div>
     );
   }

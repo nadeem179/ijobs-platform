@@ -75,7 +75,7 @@ export function useData<T>(
         setLoading(false);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/use-memo
   }, deps);
 
   useEffect(() => {
@@ -83,7 +83,16 @@ export function useData<T>(
     if (enabled) {
       fetch();
     } else {
-      setLoading(false);
+      const timer = window.setTimeout(() => {
+        setLoading(false);
+      }, 0);
+      return () => {
+        window.clearTimeout(timer);
+        mountedRef.current = false;
+        if (abortRef.current) {
+          abortRef.current.abort();
+        }
+      };
     }
     return () => {
       mountedRef.current = false;

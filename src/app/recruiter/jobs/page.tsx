@@ -1,21 +1,42 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RecruiterHeader } from "@/components/recruiter/recruiter-header";
 import { Badge } from "@/components/ui/badge";
 import { RecruiterGuard } from "@/components/navigation/recruiter-guard";
-import { mockRecruiterJobs } from "@/data/recruiter";
 import { SkillBadge } from "@/components/jobs/skill-badge";
+import { recruiterService } from "@/services";
+import type { RecruiterJobItem } from "@/services";
 import { ArrowLeft, Plus, MoreHorizontal, MapPin, Users } from "lucide-react";
 
-const statusColors: Record<string, "success" | "secondary" | "outline"> = {
+const statusColors: Record<string, "success" | "secondary" | "outline" | "destructive"> = {
   active: "success",
   draft: "secondary",
+  inactive: "secondary",
   paused: "outline",
+  closed: "destructive",
+  filled: "success",
 };
 
 export default function RecruiterJobsPage() {
+  const [jobs, setJobs] = useState<RecruiterJobItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    void recruiterService.getJobs().then((result) => {
+      if (!mounted) return;
+      setJobs(result.data ?? []);
+      setLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <RecruiterGuard>
       <div className="min-h-screen">
@@ -41,7 +62,7 @@ export default function RecruiterJobsPage() {
                 My Job Listings
               </h1>
               <p className="text-sm text-muted-foreground">
-                {mockRecruiterJobs.length} total listings
+                {loading ? "Loading listings..." : `${jobs.length} total listings`}
               </p>
             </div>
             <Button size="sm" className="rounded-xl" asChild>
@@ -53,7 +74,11 @@ export default function RecruiterJobsPage() {
           </div>
 
           <div className="space-y-2.5">
-            {mockRecruiterJobs.map((job) => (
+            {!loading && jobs.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border/60 p-6 text-center text-sm text-muted-foreground">
+                No job listings yet.
+              </div>
+            ) : jobs.map((job) => (
               <div
                 key={job.id}
                 className="rounded-xl border border-border/30 bg-background p-5 transition-all hover:border-border/60 hover:shadow-sm"
@@ -72,12 +97,13 @@ export default function RecruiterJobsPage() {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground mb-2.5">
                       <span className="inline-flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
-                        {job.location}
+                        {job.location || "Location not set"}
                       </span>
-                      <span>{job.locationType}</span>
+                      <span>{job.locationType || "Remote"}</span>
                       <span>
-                        ${(job.salaryMin / 1000).toFixed(0)}K &mdash; $
-                        {(job.salaryMax / 1000).toFixed(0)}K/yr
+                        {job.salaryCurrency || "$"}
+                        {((job.salaryMin ?? 0) / 1000).toFixed(0)}K &mdash; {job.salaryCurrency || "$"}
+                        {((job.salaryMax ?? 0) / 1000).toFixed(0)}K/{job.salaryPeriod === "hour" ? "hr" : "yr"}
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <Users className="h-3 w-3" />
@@ -85,14 +111,14 @@ export default function RecruiterJobsPage() {
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {job.skills.map((skill) => (
+                      {(job.skills ?? []).map((skill) => (
                         <SkillBadge key={skill}>{skill}</SkillBadge>
                       ))}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Button size="sm" variant="outline" className="text-xs h-8 rounded-xl" asChild>
-                      <Link href="/recruiter/candidates">
+                      <Link href={`/recruiter/jobs/${job.id}/applicants`}>
                         View Applicants
                       </Link>
                     </Button>

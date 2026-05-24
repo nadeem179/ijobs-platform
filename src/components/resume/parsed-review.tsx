@@ -15,16 +15,17 @@ interface ParsedReviewProps {
 export function ParsedReview({ parsed, onConfirm, onSkip }: ParsedReviewProps) {
   const [data, setData] = useState<ParsedResume>(parsed);
   const [skillInput, setSkillInput] = useState("");
+  const skills = data.skills || [];
 
   const addSkill = () => {
-    if (skillInput.trim() && !data.skills.includes(skillInput.trim())) {
-      setData({ ...data, skills: [...data.skills, skillInput.trim()] });
+    if (skillInput.trim() && !skills.includes(skillInput.trim())) {
+      setData({ ...data, skills: [...skills, skillInput.trim()] });
       setSkillInput("");
     }
   };
 
   const removeSkill = (skill: string) => {
-    setData({ ...data, skills: data.skills.filter((s) => s !== skill) });
+    setData({ ...data, skills: skills.filter((s) => s !== skill) });
   };
 
   return (
@@ -70,7 +71,7 @@ export function ParsedReview({ parsed, onConfirm, onSkip }: ParsedReviewProps) {
         <div>
           <label className="text-xs font-medium mb-1.5 block">Skills</label>
           <div className="flex flex-wrap gap-1.5 mb-2">
-            {data.skills.map((skill) => (
+            {skills.map((skill) => (
               <span
                 key={skill}
                 className="inline-flex items-center gap-1 rounded-lg bg-muted/70 px-2.5 py-1 text-xs font-medium"

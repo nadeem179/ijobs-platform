@@ -1,21 +1,30 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { X, Mail, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LogoWordmark } from "@/branding";
+import { getAuthOrigin, getLocalAuthCallbackUrl } from "@/lib/auth/redirect";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 interface AuthModalProps {
   onComplete?: () => void;
   onClose: () => void;
   mode?: "signin" | "signup" | "select";
+  continueTo?: string;
+  roleIntent?: "candidate" | "recruiter";
 }
 
 export function AuthModal({
+  onComplete,
   onClose,
   mode: initialMode = "select",
+  continueTo,
+  roleIntent = "candidate",
 }: AuthModalProps) {
+  const [mode, setMode] = useState<"signin" | "signup" | "select">(initialMode);
   const [screen, setScreen] = useState<"select" | "email" | "check" | "loading">(
     "select"
   );
@@ -23,7 +32,18 @@ export function AuthModal({
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const title = initialMode === "signup" ? "Create your account" : "Welcome back";
+  const title =
+    mode === "signup"
+      ? roleIntent === "recruiter"
+        ? "Create your recruiter account"
+        : "Create your account"
+      : "Welcome back";
+  const intentText =
+    mode === "signin"
+      ? "Choose how you'd like to continue."
+      : roleIntent === "recruiter"
+      ? "Continue as a recruiter to post jobs, review applicants, and finish recruiter onboarding."
+      : "Continue as a candidate to discover verified jobs and finish onboarding.";
 
   const handleGoogleSignIn = async () => {
     setError(null);
@@ -34,11 +54,30 @@ export function AuthModal({
       return;
     }
 
+    const authOrigin = getAuthOrigin();
+    if (!authOrigin) {
+      setError("Unable to start sign-in in this browser.");
+      return;
+    }
+
+    if (window.location.origin !== authOrigin) {
+      console.info("[OAUTH_START]", {
+        action: "normalize_origin",
+        from: window.location.origin,
+        to: authOrigin,
+      });
+      window.location.assign(`${authOrigin}${window.location.pathname}${window.location.search}`);
+      return;
+    }
+
+    const redirectTo = getLocalAuthCallbackUrl(continueTo) || `${authOrigin}/auth/callback`;
+    console.info("[OAUTH_START]", { provider: "google", redirectTo });
+
     setIsLoading(true);
     const { error: signInError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo,
         scopes: "openid email profile",
         queryParams: {
           prompt: "consent",
@@ -46,13 +85,15 @@ export function AuthModal({
         },
       },
     });
-    onClose();
     setIsLoading(false);
 
     if (signInError) {
       setError(signInError.message);
       setScreen("select");
+      return;
     }
+
+    onClose();
   };
 
   const sendEmailLink = async () => {
@@ -73,7 +114,7 @@ export function AuthModal({
       email: normalizedEmail,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: getLocalAuthCallbackUrl(continueTo),
         data: {
           email: normalizedEmail,
         },
@@ -97,22 +138,43 @@ export function AuthModal({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight">
+      <div className="space-y-4">
+        <div className="relative flex items-center justify-center">
+          <LogoWordmark className="w-28 sm:w-32" priority />
+          <button
+            onClick={onClose}
+            className="absolute right-0 rounded-md p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Close modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <h2 className="text-center text-lg font-semibold tracking-tight">
           {screen === "select" ? title : "Check your email"}
         </h2>
-        <button
-          onClick={onClose}
-          className="rounded-md p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Close modal"
-        >
-          <X className="h-5 w-5" />
-        </button>
+        {screen === "select" && (
+          <div className="mx-auto grid w-full max-w-56 grid-cols-2 rounded-full border border-border/50 bg-muted/20 p-1">
+            {(["signin", "signup"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setMode(option)}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                  mode === option
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {option === "signin" ? "Sign in" : "Sign up"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <p className="text-sm text-muted-foreground leading-relaxed">
+      <p className="text-center text-sm text-muted-foreground leading-relaxed">
         {screen === "select" &&
-          "No password needed. Choose how you'd like to continue."}
+          `No password needed. ${intentText}`}
         {screen === "email" &&
           "Enter your email and we'll send you a secure sign-in link."}
         {screen === "check" &&
@@ -186,15 +248,26 @@ export function AuthModal({
             Continue with Email
           </Button>
 
+          {onComplete && (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full h-12 rounded-xl text-sm font-medium"
+              onClick={onComplete}
+            >
+              Continue to application
+            </Button>
+          )}
+
           <p className="text-xs text-muted-foreground text-center pt-2 leading-relaxed">
             By continuing, you agree to our{" "}
-            <button className="underline hover:text-foreground transition-colors">
+            <Link href="/terms" className="underline hover:text-foreground transition-colors">
               Terms
-            </button>{" "}
+            </Link>{" "}
             and{" "}
-            <button className="underline hover:text-foreground transition-colors">
+            <Link href="/privacy" className="underline hover:text-foreground transition-colors">
               Privacy Policy
-            </button>
+            </Link>
           </p>
         </div>
       )}

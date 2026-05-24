@@ -37,6 +37,9 @@ export const storageConfig = {
   get avatarsBucket(): string {
     return readPublicEnv("NEXT_PUBLIC_STORAGE_BUCKET_AVATARS") || "avatars";
   },
+  get companyLogosBucket(): string {
+    return readPublicEnv("NEXT_PUBLIC_STORAGE_BUCKET_COMPANY_LOGOS") || "company-logos";
+  },
   get portfolioBucket(): string {
     return readPublicEnv("NEXT_PUBLIC_STORAGE_BUCKET_PORTFOLIO") || "portfolio";
   },
@@ -49,7 +52,7 @@ export const storageConfig = {
 
 export const appConfig = {
   get name(): string {
-    return readPublicEnv("NEXT_PUBLIC_APP_NAME") || "iJobs";
+    return readPublicEnv("NEXT_PUBLIC_APP_NAME") || "Diplotix";
   },
   get url(): string {
     return readPublicEnv("NEXT_PUBLIC_APP_URL");

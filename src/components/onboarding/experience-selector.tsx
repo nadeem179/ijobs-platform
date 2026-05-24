@@ -19,7 +19,7 @@ export function ExperienceSelector({ selected, onSelect }: ExperienceSelectorPro
     <div className="space-y-4">
       <div>
         <h3 className="text-base font-semibold tracking-tight">
-          What's your experience level?
+          What&apos;s your experience level?
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
           This helps match you with the right opportunities.
